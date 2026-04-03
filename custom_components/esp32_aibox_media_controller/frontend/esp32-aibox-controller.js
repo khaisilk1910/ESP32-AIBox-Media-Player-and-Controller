@@ -100,8 +100,8 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
 
   static getStubConfig() {
     return {
-      entity: "media_player.phicomm_r1",
-      title: "Phicomm R1",
+      entity: "media_player.esp32-aibox-media-controller",
+      title: "ESP32 AIBox",
     };
   }
 
@@ -111,10 +111,10 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
 
   setConfig(config) {
     if (!config || !config.entity) {
-      throw new Error("Phicomm R1 Card: 'entity' is required");
+      throw new Error("ESP32 AIBox Card: 'entity' is required");
     }
     this._config = {
-      title: "Phicomm R1",
+      title: "ESP32 AIBox",
       ...config,
     };
     this._lastEntityRef = null;
@@ -897,10 +897,10 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     };
 
     const candidateDomains = [domain];
-    if (domain === "phicomm_r1") {
+    if (domain === "esp32-aibox-media-controller") {
       candidateDomains.push("media_player");
     } else if (domain === "media_player") {
-      candidateDomains.push("phicomm_r1");
+      candidateDomains.push("esp32-aibox-media-controller");
     }
 
     const seen = new Set();
@@ -926,7 +926,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
 
       let refreshed = false;
       try {
-        await this._goiDichVu("phicomm_r1", "refresh_state");
+        await this._goiDichVu("esp32-aibox-media-controller", "refresh_state");
         refreshed = true;
       } catch (err) {
         refreshed = false;
@@ -2028,7 +2028,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     if (!this.shadowRoot) return;
     if (!this._config) {
       this._xoaHenGioTienDo();
-      this.shadowRoot.innerHTML = `<ha-card><div style="padding:16px;">Thẻ Phicomm R1 đang thiếu cấu hình.</div></ha-card>`;
+      this.shadowRoot.innerHTML = `<ha-card><div style="padding:16px;">Thẻ ESP32 AIBox đang thiếu cấu hình.</div></ha-card>`;
       return;
     }
 
@@ -3601,10 +3601,10 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     if (shouldFetchHistory) this._lastChatHistoryRequestAt = now;
     try {
       if (shouldFetchState) {
-        await this._goiDichVu("phicomm_r1", "chat_get_state");
+        await this._goiDichVu("esp32-aibox-media-controller", "chat_get_state");
       }
       if (shouldFetchHistory) {
-        await this._goiDichVu("phicomm_r1", "chat_get_history");
+        await this._goiDichVu("esp32-aibox-media-controller", "chat_get_history");
       }
       await this._lamMoiEntity(220);
     } catch (err) {
@@ -3623,8 +3623,8 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._cuonCuoiKhungChat();
 
     try {
-      await this._goiDichVu("phicomm_r1", "chat_send_text", { text });
-      await this._goiDichVu("phicomm_r1", "chat_get_history");
+      await this._goiDichVu("esp32-aibox-media-controller", "chat_send_text", { text });
+      await this._goiDichVu("esp32-aibox-media-controller", "chat_get_history");
       await this._lamMoiEntity(220, 2);
       this._cuonCuoiKhungChat();
     } catch (err) {
@@ -3638,9 +3638,9 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._lastControlStateRequestAt = now;
     try {
       await this._lamMoiEntity(180);
-      await this._goiDichVu("phicomm_r1", "wake_word_get_enabled");
-      await this._goiDichVu("phicomm_r1", "wake_word_get_sensitivity");
-      await this._goiDichVu("phicomm_r1", "custom_ai_get_enabled");
+      await this._goiDichVu("esp32-aibox-media-controller", "wake_word_get_enabled");
+      await this._goiDichVu("esp32-aibox-media-controller", "wake_word_get_sensitivity");
+      await this._goiDichVu("esp32-aibox-media-controller", "custom_ai_get_enabled");
       await this._lamMoiEntity(220);
     } catch (err) {
       console.warn("control bootstrap refresh failed", err);
@@ -3652,7 +3652,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     if (now - this._lastSystemStateRequestAt < 7000) return;
     this._lastSystemStateRequestAt = now;
     try {
-      await this._goiDichVu("phicomm_r1", "refresh_state");
+      await this._goiDichVu("esp32-aibox-media-controller", "refresh_state");
       await this._lamMoiEntity(250, 2);
     } catch (err) {
       console.warn("system bootstrap refresh failed", err);
@@ -3876,7 +3876,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
         this._wakeEnabled = desired;
         this._datCongTacCho("wake_enabled", desired);
         try {
-          await this._goiDichVu("phicomm_r1", "wake_word_set_enabled", {
+          await this._goiDichVu("esp32-aibox-media-controller", "wake_word_set_enabled", {
             enabled: desired,
           });
           await this._lamMoiEntity(250, 2);
@@ -3896,7 +3896,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
       });
       wakeSensitivity.addEventListener("change", async (ev) => {
         this._wakeSensitivity = Number(ev.target.value);
-        await this._goiDichVu("phicomm_r1", "wake_word_set_sensitivity", {
+        await this._goiDichVu("esp32-aibox-media-controller", "wake_word_set_sensitivity", {
           sensitivity: this._wakeSensitivity,
         });
         await this._lamMoiEntity(300);
@@ -3906,8 +3906,8 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     const wakeRefresh = root.getElementById("wake-refresh");
     if (wakeRefresh) {
       wakeRefresh.addEventListener("click", async () => {
-        await this._goiDichVu("phicomm_r1", "wake_word_get_enabled");
-        await this._goiDichVu("phicomm_r1", "wake_word_get_sensitivity");
+        await this._goiDichVu("esp32-aibox-media-controller", "wake_word_get_enabled");
+        await this._goiDichVu("esp32-aibox-media-controller", "wake_word_get_sensitivity");
         await this._lamMoiEntity(220);
       });
     }
@@ -3919,7 +3919,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
         this._antiDeafEnabled = desired;
         this._datCongTacCho("anti_deaf_enabled", desired);
         try {
-          await this._goiDichVu("phicomm_r1", "anti_deaf_ai_set_enabled", {
+          await this._goiDichVu("esp32-aibox-media-controller", "anti_deaf_ai_set_enabled", {
             enabled: desired,
           });
           await this._lamMoiEntity(250, 2);
@@ -3939,7 +3939,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
         this._dlnaEnabled = desired;
         this._datCongTacCho("dlna_enabled", desired);
         try {
-          await this._goiDichVu("phicomm_r1", "set_dlna", {
+          await this._goiDichVu("esp32-aibox-media-controller", "set_dlna", {
             enabled: desired,
           });
           await this._lamMoiEntity(250, 2);
@@ -3959,7 +3959,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
         this._airplayEnabled = desired;
         this._datCongTacCho("airplay_enabled", desired);
         try {
-          await this._goiDichVu("phicomm_r1", "set_airplay", {
+          await this._goiDichVu("esp32-aibox-media-controller", "set_airplay", {
             enabled: desired,
           });
           await this._lamMoiEntity(250, 2);
@@ -3979,7 +3979,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
         this._bluetoothEnabled = desired;
         this._datCongTacCho("bluetooth_enabled", desired);
         try {
-          await this._goiDichVu("phicomm_r1", "set_bluetooth", {
+          await this._goiDichVu("esp32-aibox-media-controller", "set_bluetooth", {
             enabled: desired,
           });
           await this._lamMoiEntity(250, 2);
@@ -4031,7 +4031,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     const chatWakeup = root.getElementById("chat-wakeup");
     if (chatWakeup) {
       chatWakeup.addEventListener("click", async () => {
-        await this._goiDichVu("phicomm_r1", "chat_wake_up");
+        await this._goiDichVu("esp32-aibox-media-controller", "chat_wake_up");
         await this._lamMoiEntity(280);
       });
     }
@@ -4039,7 +4039,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     const chatTestMic = root.getElementById("chat-testmic");
     if (chatTestMic) {
       chatTestMic.addEventListener("click", async () => {
-        await this._goiDichVu("phicomm_r1", "chat_test_mic");
+        await this._goiDichVu("esp32-aibox-media-controller", "chat_test_mic");
         await this._lamMoiEntity(280);
       });
     }
@@ -4049,8 +4049,8 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
       chatRefresh.addEventListener("click", async () => {
         this._lastChatStateRequestAt = Date.now();
         this._lastChatHistoryRequestAt = Date.now();
-        await this._goiDichVu("phicomm_r1", "chat_get_state");
-        await this._goiDichVu("phicomm_r1", "chat_get_history");
+        await this._goiDichVu("esp32-aibox-media-controller", "chat_get_state");
+        await this._goiDichVu("esp32-aibox-media-controller", "chat_get_history");
         await this._lamMoiEntity(280);
       });
     }
@@ -4125,7 +4125,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     if (bassEnabled) {
       bassEnabled.addEventListener("change", async (ev) => {
         this._bassEnabled = Boolean(ev.target.checked);
-        await this._goiDichVu("phicomm_r1", "set_bass_enable", {
+        await this._goiDichVu("esp32-aibox-media-controller", "set_bass_enable", {
           enabled: this._bassEnabled,
         });
         await this._lamMoiEntity(250, 2);
@@ -4139,7 +4139,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
       });
       bassStrength.addEventListener("change", async (ev) => {
         this._bassStrength = Number(ev.target.value);
-        await this._goiDichVu("phicomm_r1", "set_bass_strength", {
+        await this._goiDichVu("esp32-aibox-media-controller", "set_bass_strength", {
           strength: this._bassStrength,
         });
         await this._lamMoiEntity(250, 2);
@@ -4150,7 +4150,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     if (loudnessEnabled) {
       loudnessEnabled.addEventListener("change", async (ev) => {
         this._loudnessEnabled = Boolean(ev.target.checked);
-        await this._goiDichVu("phicomm_r1", "set_loudness_enable", {
+        await this._goiDichVu("esp32-aibox-media-controller", "set_loudness_enable", {
           enabled: this._loudnessEnabled,
         });
         await this._lamMoiEntity(250, 2);
@@ -4164,7 +4164,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
       });
       loudnessGain.addEventListener("change", async (ev) => {
         this._loudnessGain = Number(ev.target.value);
-        await this._goiDichVu("phicomm_r1", "set_loudness_gain", {
+        await this._goiDichVu("esp32-aibox-media-controller", "set_loudness_gain", {
           gain: this._loudnessGain,
         });
         await this._lamMoiEntity(250, 2);
@@ -4178,7 +4178,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
         this._mainLightEnabled = desired;
         this._datCongTacCho("main_light_enabled", desired);
         try {
-          await this._goiDichVu("phicomm_r1", "set_main_light", {
+          await this._goiDichVu("esp32-aibox-media-controller", "set_main_light", {
             enabled: desired,
           });
           await this._lamMoiEntity(250, 2);
@@ -4198,7 +4198,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
       });
       mainBrightness.addEventListener("change", async (ev) => {
         this._mainLightBrightness = Number(ev.target.value);
-        await this._goiDichVu("phicomm_r1", "set_light_brightness", {
+        await this._goiDichVu("esp32-aibox-media-controller", "set_light_brightness", {
           brightness: this._mainLightBrightness,
         });
         await this._lamMoiEntity(250, 2);
@@ -4212,7 +4212,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
       });
       mainSpeed.addEventListener("change", async (ev) => {
         this._mainLightSpeed = Number(ev.target.value);
-        await this._goiDichVu("phicomm_r1", "set_light_speed", {
+        await this._goiDichVu("esp32-aibox-media-controller", "set_light_speed", {
           speed: this._mainLightSpeed,
         });
         await this._lamMoiEntity(250, 2);
@@ -4223,7 +4223,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
       el.addEventListener("click", async () => {
         const mode = Number(el.dataset.mode || "0");
         this._mainLightMode = mode;
-        await this._goiDichVu("phicomm_r1", "set_light_mode", { mode });
+        await this._goiDichVu("esp32-aibox-media-controller", "set_light_mode", { mode });
         await this._lamMoiEntity(250, 2);
       });
     });
@@ -4232,7 +4232,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     if (edgeEnabled) {
       edgeEnabled.addEventListener("change", async (ev) => {
         this._edgeLightEnabled = Boolean(ev.target.checked);
-        await this._goiDichVu("phicomm_r1", "set_edge_light", {
+        await this._goiDichVu("esp32-aibox-media-controller", "set_edge_light", {
           enabled: this._edgeLightEnabled,
           intensity: this._edgeLightIntensity,
         });
@@ -4247,7 +4247,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
       });
       edgeIntensity.addEventListener("change", async (ev) => {
         this._edgeLightIntensity = Number(ev.target.value);
-        await this._goiDichVu("phicomm_r1", "set_edge_light", {
+        await this._goiDichVu("esp32-aibox-media-controller", "set_edge_light", {
           enabled: this._edgeLightEnabled,
           intensity: this._edgeLightIntensity,
         });
@@ -4258,7 +4258,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     const rebootBtn = root.getElementById("system-reboot");
     if (rebootBtn) {
       rebootBtn.addEventListener("click", async () => {
-        await this._goiDichVu("phicomm_r1", "reboot");
+        await this._goiDichVu("esp32_aibox_media_controller", "reboot");
       });
     }
   }
