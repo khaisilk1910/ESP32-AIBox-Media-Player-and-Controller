@@ -3,7 +3,6 @@ export const UIEventsMixin = {
     const root = this.shadowRoot;
     if (!root) return;
 
-    // --- SỰ KIỆN CHO THIẾT BỊ (DROPDOWN & PREV/NEXT) ---
     const deviceSelector = root.getElementById("device-selector");
     if (deviceSelector) {
       deviceSelector.addEventListener("change", (ev) => {
@@ -59,6 +58,24 @@ export const UIEventsMixin = {
         this._veGiaoDien();
       });
     });
+
+    const btnRepeat = root.getElementById("btn-repeat");
+    if (btnRepeat) {
+      btnRepeat.addEventListener("click", () => {
+        if (this._repeatMode === "all") this._repeatMode = "one";
+        else if (this._repeatMode === "one") this._repeatMode = "off";
+        else this._repeatMode = "all";
+        this._veGiaoDien();
+      });
+    }
+
+    const btnWaveToggle = root.getElementById("btn-wave-toggle");
+    if (btnWaveToggle) {
+      btnWaveToggle.addEventListener("click", () => {
+        this._waveEffect = (this._waveEffect + 1) % 3;
+        this._veGiaoDien();
+      });
+    }
 
     const mediaQuery = root.getElementById("media-query");
     if (mediaQuery) {
@@ -143,21 +160,24 @@ export const UIEventsMixin = {
 
     const btnPrev = root.getElementById("btn-prev");
     if (btnPrev) {
-      btnPrev.addEventListener("click", async () => {
-        await this._goiDichVu("media_player", "media_previous_track");
+      btnPrev.addEventListener("click", async (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        try { await this._goiDichVu("media_player", "media_previous_track"); } catch(e){}
       });
     }
 
     const btnPlayPause = root.getElementById("btn-playpause");
     if (btnPlayPause) {
-      btnPlayPause.addEventListener("click", async () => {
+      btnPlayPause.addEventListener("click", async (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
         await this._xuLyPhatTamDung();
       });
     }
 
     const btnStop = root.getElementById("btn-stop");
     if (btnStop) {
-      btnStop.addEventListener("click", async () => {
+      btnStop.addEventListener("click", async (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
         this._forcePauseUntil = Date.now() + 5000;
         this._optimisticPlayUntil = 0;
         this._liveTrackKey = "";
@@ -165,16 +185,15 @@ export const UIEventsMixin = {
         this._liveDurationSeconds = 0;
         this._livePlaying = false;
         this._nowPlayingCache = {
-          trackKey: "",
-          title: "",
-          artist: "",
-          source: "",
-          thumbnail_url: "",
-          duration: 0,
+          trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0,
         };
         this._dongBoTienDoDom();
         this._capNhatHenGioTienDo();
-        await this._goiDichVu("media_player", "media_stop");
+        try {
+          await this._goiDichVu("media_player", "media_stop");
+        } catch (e) {
+          await this._goiDichVu("media_player", "media_pause");
+        }
         this._lastPlayPauseSent = "pause";
         await this._lamMoiEntity(300);
       });
@@ -182,8 +201,9 @@ export const UIEventsMixin = {
 
     const btnNext = root.getElementById("btn-next");
     if (btnNext) {
-      btnNext.addEventListener("click", async () => {
-        await this._goiDichVu("media_player", "media_next_track");
+      btnNext.addEventListener("click", async (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        try { await this._goiDichVu("media_player", "media_next_track"); } catch(e){}
       });
     }
 
@@ -249,12 +269,9 @@ export const UIEventsMixin = {
         this._wakeEnabled = desired;
         this._datCongTacCho("wake_enabled", desired);
         try {
-          await this._goiDichVu("esp32_aibox_media_controller", "wake_word_set_enabled", {
-            enabled: desired,
-          });
+          await this._goiDichVu("esp32_aibox_media_controller", "wake_word_set_enabled", { enabled: desired });
           await this._lamMoiEntity(250, 2);
         } catch (err) {
-          console.warn("wake_word_set_enabled failed", err);
           this._xoaCongTacCho("wake_enabled");
           this._wakeEnabled = !desired;
           ev.target.checked = this._wakeEnabled;
@@ -269,9 +286,7 @@ export const UIEventsMixin = {
       });
       wakeSensitivity.addEventListener("change", async (ev) => {
         this._wakeSensitivity = Number(ev.target.value);
-        await this._goiDichVu("esp32_aibox_media_controller", "wake_word_set_sensitivity", {
-          sensitivity: this._wakeSensitivity,
-        });
+        await this._goiDichVu("esp32_aibox_media_controller", "wake_word_set_sensitivity", { sensitivity: this._wakeSensitivity });
         await this._lamMoiEntity(300);
       });
     }
@@ -292,12 +307,9 @@ export const UIEventsMixin = {
         this._antiDeafEnabled = desired;
         this._datCongTacCho("anti_deaf_enabled", desired);
         try {
-          await this._goiDichVu("esp32_aibox_media_controller", "anti_deaf_ai_set_enabled", {
-            enabled: desired,
-          });
+          await this._goiDichVu("esp32_aibox_media_controller", "anti_deaf_ai_set_enabled", { enabled: desired });
           await this._lamMoiEntity(250, 2);
         } catch (err) {
-          console.warn("anti_deaf_ai_set_enabled failed", err);
           this._xoaCongTacCho("anti_deaf_enabled");
           this._antiDeafEnabled = !desired;
           ev.target.checked = this._antiDeafEnabled;
@@ -312,12 +324,9 @@ export const UIEventsMixin = {
         this._dlnaEnabled = desired;
         this._datCongTacCho("dlna_enabled", desired);
         try {
-          await this._goiDichVu("esp32_aibox_media_controller", "set_dlna", {
-            enabled: desired,
-          });
+          await this._goiDichVu("esp32_aibox_media_controller", "set_dlna", { enabled: desired });
           await this._lamMoiEntity(250, 2);
         } catch (err) {
-          console.warn("set_dlna failed", err);
           this._xoaCongTacCho("dlna_enabled");
           this._dlnaEnabled = !desired;
           ev.target.checked = this._dlnaEnabled;
@@ -332,12 +341,9 @@ export const UIEventsMixin = {
         this._airplayEnabled = desired;
         this._datCongTacCho("airplay_enabled", desired);
         try {
-          await this._goiDichVu("esp32_aibox_media_controller", "set_airplay", {
-            enabled: desired,
-          });
+          await this._goiDichVu("esp32_aibox_media_controller", "set_airplay", { enabled: desired });
           await this._lamMoiEntity(250, 2);
         } catch (err) {
-          console.warn("set_airplay failed", err);
           this._xoaCongTacCho("airplay_enabled");
           this._airplayEnabled = !desired;
           ev.target.checked = this._airplayEnabled;
@@ -352,12 +358,9 @@ export const UIEventsMixin = {
         this._bluetoothEnabled = desired;
         this._datCongTacCho("bluetooth_enabled", desired);
         try {
-          await this._goiDichVu("esp32_aibox_media_controller", "set_bluetooth", {
-            enabled: desired,
-          });
+          await this._goiDichVu("esp32_aibox_media_controller", "set_bluetooth", { enabled: desired });
           await this._lamMoiEntity(250, 2);
         } catch (err) {
-          console.warn("set_bluetooth failed", err);
           this._xoaCongTacCho("bluetooth_enabled");
           this._bluetoothEnabled = !desired;
           ev.target.checked = this._bluetoothEnabled;
@@ -385,20 +388,14 @@ export const UIEventsMixin = {
         }
       });
       chatInput.addEventListener("blur", () => {
-        setTimeout(() => {
-          this._xuLyRenderCho();
-        }, 0);
+        setTimeout(() => { this._xuLyRenderCho(); }, 0);
       });
     }
 
     const chatSend = root.getElementById("chat-send");
     if (chatSend) {
-      chatSend.addEventListener("mousedown", (ev) => {
-        ev.preventDefault();
-      });
-      chatSend.addEventListener("click", async () => {
-        await this._guiTinNhanChat();
-      });
+      chatSend.addEventListener("mousedown", (ev) => { ev.preventDefault(); });
+      chatSend.addEventListener("click", async () => { await this._guiTinNhanChat(); });
     }
 
     const chatWakeup = root.getElementById("chat-wakeup");
@@ -434,9 +431,7 @@ export const UIEventsMixin = {
         this._eqEnabled = Boolean(ev.target.checked);
         this._batDauCanhGacDongBoEq(1400);
         this._capNhatEqGiaoDien(root);
-        await this._goiDichVu("media_player", "set_eq_enable", {
-          enabled: this._eqEnabled,
-        });
+        await this._goiDichVu("media_player", "set_eq_enable", { enabled: this._eqEnabled });
         await this._lamMoiEntity(250, 2);
       });
     }
@@ -447,9 +442,7 @@ export const UIEventsMixin = {
         const band = Math.max(0, Math.min(this._eqBandCount - 1, docBand));
         const level = this._gioiHanEqLevel(ev.target.value, this._layEqLevelTheoBand(band, 0));
         if (!Array.isArray(this._eqBands) || this._eqBands.length < this._eqBandCount) {
-          this._eqBands = Array.from({ length: this._eqBandCount }, (_, index) =>
-            this._layEqLevelTheoBand(index, 0)
-          );
+          this._eqBands = Array.from({ length: this._eqBandCount }, (_, index) => this._layEqLevelTheoBand(index, 0));
         }
         this._eqBand = band;
         this._eqLevel = level;
@@ -461,9 +454,7 @@ export const UIEventsMixin = {
         const band = Math.max(0, Math.min(this._eqBandCount - 1, docBand));
         const level = this._gioiHanEqLevel(ev.target.value, this._layEqLevelTheoBand(band, 0));
         if (!Array.isArray(this._eqBands) || this._eqBands.length < this._eqBandCount) {
-          this._eqBands = Array.from({ length: this._eqBandCount }, (_, index) =>
-            this._layEqLevelTheoBand(index, 0)
-          );
+          this._eqBands = Array.from({ length: this._eqBandCount }, (_, index) => this._layEqLevelTheoBand(index, 0));
         }
         this._eqBand = band;
         this._eqLevel = level;
@@ -472,35 +463,24 @@ export const UIEventsMixin = {
         if (!this._eqEnabled) {
           this._eqEnabled = true;
           this._capNhatEqGiaoDien(root);
-          await this._goiDichVu("media_player", "set_eq_enable", {
-            enabled: true,
-          });
+          await this._goiDichVu("media_player", "set_eq_enable", { enabled: true });
         }
-        await this._goiDichVu("media_player", "set_eq_bandlevel", {
-          band,
-          level,
-        });
+        await this._goiDichVu("media_player", "set_eq_bandlevel", { band, level });
         await this._lamMoiEntity(220, 2);
         this._xuLyRenderCho();
       });
-      slider.addEventListener("blur", () => {
-        setTimeout(() => this._xuLyRenderCho(), 0);
-      });
+      slider.addEventListener("blur", () => { setTimeout(() => this._xuLyRenderCho(), 0); });
     });
 
     root.querySelectorAll(".eq-preset").forEach((el) => {
-      el.addEventListener("click", async () => {
-        await this._apDungEqMau(el.dataset.preset || "");
-      });
+      el.addEventListener("click", async () => { await this._apDungEqMau(el.dataset.preset || ""); });
     });
 
     const bassEnabled = root.getElementById("bass-enabled");
     if (bassEnabled) {
       bassEnabled.addEventListener("change", async (ev) => {
         this._bassEnabled = Boolean(ev.target.checked);
-        await this._goiDichVu("esp32_aibox_media_controller", "set_bass_enable", {
-          enabled: this._bassEnabled,
-        });
+        await this._goiDichVu("esp32_aibox_media_controller", "set_bass_enable", { enabled: this._bassEnabled });
         await this._lamMoiEntity(250, 2);
       });
     }
@@ -512,9 +492,7 @@ export const UIEventsMixin = {
       });
       bassStrength.addEventListener("change", async (ev) => {
         this._bassStrength = Number(ev.target.value);
-        await this._goiDichVu("esp32_aibox_media_controller", "set_bass_strength", {
-          strength: this._bassStrength,
-        });
+        await this._goiDichVu("esp32_aibox_media_controller", "set_bass_strength", { strength: this._bassStrength });
         await this._lamMoiEntity(250, 2);
       });
     }
@@ -523,9 +501,7 @@ export const UIEventsMixin = {
     if (loudnessEnabled) {
       loudnessEnabled.addEventListener("change", async (ev) => {
         this._loudnessEnabled = Boolean(ev.target.checked);
-        await this._goiDichVu("esp32_aibox_media_controller", "set_loudness_enable", {
-          enabled: this._loudnessEnabled,
-        });
+        await this._goiDichVu("esp32_aibox_media_controller", "set_loudness_enable", { enabled: this._loudnessEnabled });
         await this._lamMoiEntity(250, 2);
       });
     }
@@ -537,9 +513,7 @@ export const UIEventsMixin = {
       });
       loudnessGain.addEventListener("change", async (ev) => {
         this._loudnessGain = Number(ev.target.value);
-        await this._goiDichVu("esp32_aibox_media_controller", "set_loudness_gain", {
-          gain: this._loudnessGain,
-        });
+        await this._goiDichVu("esp32_aibox_media_controller", "set_loudness_gain", { gain: this._loudnessGain });
         await this._lamMoiEntity(250, 2);
       });
     }
@@ -551,12 +525,9 @@ export const UIEventsMixin = {
         this._mainLightEnabled = desired;
         this._datCongTacCho("main_light_enabled", desired);
         try {
-          await this._goiDichVu("esp32_aibox_media_controller", "set_main_light", {
-            enabled: desired,
-          });
+          await this._goiDichVu("esp32_aibox_media_controller", "set_main_light", { enabled: desired });
           await this._lamMoiEntity(250, 2);
         } catch (err) {
-          console.warn("set_main_light failed", err);
           this._xoaCongTacCho("main_light_enabled");
           this._mainLightEnabled = !desired;
           ev.target.checked = this._mainLightEnabled;
@@ -571,9 +542,7 @@ export const UIEventsMixin = {
       });
       mainBrightness.addEventListener("change", async (ev) => {
         this._mainLightBrightness = Number(ev.target.value);
-        await this._goiDichVu("esp32_aibox_media_controller", "set_light_brightness", {
-          brightness: this._mainLightBrightness,
-        });
+        await this._goiDichVu("esp32_aibox_media_controller", "set_light_brightness", { brightness: this._mainLightBrightness });
         await this._lamMoiEntity(250, 2);
       });
     }
@@ -585,9 +554,7 @@ export const UIEventsMixin = {
       });
       mainSpeed.addEventListener("change", async (ev) => {
         this._mainLightSpeed = Number(ev.target.value);
-        await this._goiDichVu("esp32_aibox_media_controller", "set_light_speed", {
-          speed: this._mainLightSpeed,
-        });
+        await this._goiDichVu("esp32_aibox_media_controller", "set_light_speed", { speed: this._mainLightSpeed });
         await this._lamMoiEntity(250, 2);
       });
     }
@@ -605,10 +572,7 @@ export const UIEventsMixin = {
     if (edgeEnabled) {
       edgeEnabled.addEventListener("change", async (ev) => {
         this._edgeLightEnabled = Boolean(ev.target.checked);
-        await this._goiDichVu("esp32_aibox_media_controller", "set_edge_light", {
-          enabled: this._edgeLightEnabled,
-          intensity: this._edgeLightIntensity,
-        });
+        await this._goiDichVu("esp32_aibox_media_controller", "set_edge_light", { enabled: this._edgeLightEnabled, intensity: this._edgeLightIntensity });
         await this._lamMoiEntity(250, 2);
       });
     }
@@ -620,10 +584,7 @@ export const UIEventsMixin = {
       });
       edgeIntensity.addEventListener("change", async (ev) => {
         this._edgeLightIntensity = Number(ev.target.value);
-        await this._goiDichVu("esp32_aibox_media_controller", "set_edge_light", {
-          enabled: this._edgeLightEnabled,
-          intensity: this._edgeLightIntensity,
-        });
+        await this._goiDichVu("esp32_aibox_media_controller", "set_edge_light", { enabled: this._edgeLightEnabled, intensity: this._edgeLightIntensity });
         await this._lamMoiEntity(250, 2);
       });
     }

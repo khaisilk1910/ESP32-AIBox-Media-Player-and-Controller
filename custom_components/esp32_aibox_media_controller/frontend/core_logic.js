@@ -318,12 +318,33 @@ export const CoreLogicMixin = {
 
     if (this._liveDurationSeconds > 0) {
       this._livePositionSeconds = Math.min(this._liveDurationSeconds, this._livePositionSeconds + elapsed);
-      if (this._livePositionSeconds >= this._liveDurationSeconds - 0.2) this._livePlaying = false;
+      if (this._livePositionSeconds >= this._liveDurationSeconds - 0.2) {
+        this._livePlaying = false;
+        this._xuLyHetBai();
+      }
     } else {
       this._livePositionSeconds += elapsed;
     }
     this._dongBoTienDoDom();
     this._capNhatHenGioTienDo();
+  },
+
+  async _xuLyHetBai() {
+    if (this._repeatMode === "one") {
+      const trackId = this._thongTinPhat()?.track_id;
+      const source = this._thongTinPhat()?.source || "";
+      if (trackId) {
+        if (source.toLowerCase().includes("zing")) {
+          await this._goiDichVu("media_player", "play_zing", { song_id: trackId });
+        } else {
+          await this._goiDichVu("media_player", "play_youtube", { video_id: trackId });
+        }
+      } else {
+        await this._goiDichVu("media_player", "media_play");
+      }
+    } else if (this._repeatMode === "all") {
+      await this._goiDichVu("media_player", "media_next_track");
+    }
   },
 
   _dongBoTienDoDom() {
@@ -555,7 +576,14 @@ export const CoreLogicMixin = {
     const playbackState = this._layTrangThaiHienThiPhat(playback, stateObj);
     const nextAction = playbackState.isPlaying ? "pause" : "play";
 
-    await this._goiDichVu("media_player", nextAction === "pause" ? "media_pause" : "media_play");
+    try {
+      await this._goiDichVu("media_player", nextAction === "pause" ? "media_pause" : "media_play");
+    } catch (err) {
+      console.warn("Fallback to media_play_pause", err);
+      // Tự động dùng lệnh thay thế nếu hệ thống không hỗ trợ play/pause rời rạc
+      await this._goiDichVu("media_player", "media_play_pause");
+    }
+    
     this._lastPlayPauseSent = nextAction;
     if (nextAction === "pause") {
       this._forcePauseUntil = Date.now() + 5000; this._optimisticPlayUntil = 0;
