@@ -162,6 +162,9 @@ export const UIEventsMixin = {
     if (btnPrev) {
       btnPrev.addEventListener("click", async (ev) => {
         ev.preventDefault(); ev.stopPropagation();
+        this._livePositionSeconds = 0;
+        this._ignorePositionUntil = Date.now() + 4000;
+        this._dongBoTienDoDom();
         try { await this._goiDichVu("media_player", "media_previous_track"); } catch(e){}
       });
     }
@@ -182,6 +185,7 @@ export const UIEventsMixin = {
         this._optimisticPlayUntil = 0;
         this._liveTrackKey = "";
         this._livePositionSeconds = 0;
+        this._ignorePositionUntil = Date.now() + 4000;
         this._liveDurationSeconds = 0;
         this._livePlaying = false;
         this._nowPlayingCache = {
@@ -203,6 +207,9 @@ export const UIEventsMixin = {
     if (btnNext) {
       btnNext.addEventListener("click", async (ev) => {
         ev.preventDefault(); ev.stopPropagation();
+        this._livePositionSeconds = 0;
+        this._ignorePositionUntil = Date.now() + 4000;
+        this._dongBoTienDoDom();
         try { await this._goiDichVu("media_player", "media_next_track"); } catch(e){}
       });
     }
@@ -217,6 +224,27 @@ export const UIEventsMixin = {
         await this._goiDichVu("media_player", "volume_set", {
           volume_level: this._volumeLevel,
         });
+      });
+    }
+
+    // Logic xử lý 2 nút bấm +- Volume mới thêm
+    const btnVolDown = root.getElementById("btn-vol-down");
+    if (btnVolDown) {
+      btnVolDown.addEventListener("click", async () => {
+        let newVol = Math.max(0, Math.round(this._volumeLevel * 100) - 5);
+        this._volumeLevel = newVol / 100;
+        this._veGiaoDien(); // Vẽ lại liền để thanh trượt chạy mượt
+        await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel });
+      });
+    }
+
+    const btnVolUp = root.getElementById("btn-vol-up");
+    if (btnVolUp) {
+      btnVolUp.addEventListener("click", async () => {
+        let newVol = Math.min(100, Math.round(this._volumeLevel * 100) + 5);
+        this._volumeLevel = newVol / 100;
+        this._veGiaoDien(); // Vẽ lại liền để thanh trượt chạy mượt
+        await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel });
       });
     }
 

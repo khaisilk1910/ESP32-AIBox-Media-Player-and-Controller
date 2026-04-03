@@ -285,7 +285,15 @@ export const CoreLogicMixin = {
 
   _dongBoTienDoTrucTiep(trackKey, positionSeconds, durationSeconds, isPlaying) {
     const now = Date.now();
-    const posRaw = Number.isFinite(Number(positionSeconds)) ? Math.max(0, Number(positionSeconds)) : 0;
+    let posRaw = Number.isFinite(Number(positionSeconds)) ? Math.max(0, Number(positionSeconds)) : 0;
+    
+    // Bỏ qua giá trị vị trí bị cũ do HA đồng bộ chậm
+    if (this._ignorePositionUntil && now < this._ignorePositionUntil) {
+      posRaw = 0;
+    } else if (this._ignorePositionUntil && now >= this._ignorePositionUntil) {
+      this._ignorePositionUntil = 0;
+    }
+
     const dur = Number.isFinite(Number(durationSeconds)) ? Math.max(0, Number(durationSeconds)) : 0;
     const pos = dur > 0 ? Math.min(posRaw, dur) : posRaw;
     const sameTrack = Boolean(trackKey) && trackKey === this._liveTrackKey;
@@ -330,6 +338,10 @@ export const CoreLogicMixin = {
   },
 
   async _xuLyHetBai() {
+    this._livePositionSeconds = 0;
+    this._ignorePositionUntil = Date.now() + 4000;
+    this._dongBoTienDoDom();
+
     if (this._repeatMode === "one") {
       const trackId = this._thongTinPhat()?.track_id;
       const source = this._thongTinPhat()?.source || "";
@@ -559,6 +571,11 @@ export const CoreLogicMixin = {
     const resolvedId = this._layIdMucMedia(item);
     if (!resolvedId) return;
     const normalizedSource = String(source || "").toLowerCase();
+
+    this._livePositionSeconds = 0;
+    this._ignorePositionUntil = Date.now() + 4000;
+    this._dongBoTienDoDom();
+
     if (normalizedSource.includes("zing")) {
       await this._goiDichVu("media_player", "play_zing", { song_id: resolvedId });
     } else {

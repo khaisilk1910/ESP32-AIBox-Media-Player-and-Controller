@@ -28,6 +28,7 @@ export const UtilsMixin = {
     this._xoaHenGioTienDo();
     this._liveTrackKey = "";
     this._livePositionSeconds = 0;
+    this._ignorePositionUntil = 0; // THÊM MỚI
     this._liveDurationSeconds = 0;
     this._livePlaying = false;
     this._nowPlayingCache = { trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0 };

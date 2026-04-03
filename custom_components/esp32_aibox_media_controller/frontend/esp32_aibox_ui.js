@@ -62,6 +62,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._progressTimerId = null;
     this._liveTrackKey = "";
     this._livePositionSeconds = 0;
+    this._ignorePositionUntil = 0; // THÊM MỚI
     this._liveDurationSeconds = 0;
     this._livePlaying = false;
     this._liveTickAt = 0;
@@ -112,6 +113,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
 
     this._liveTrackKey = "";
     this._livePositionSeconds = 0;
+    this._ignorePositionUntil = 0; // THÊM MỚI
     this._liveDurationSeconds = 0;
     this._livePlaying = false;
     this._liveTickAt = 0;

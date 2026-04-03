@@ -33,6 +33,15 @@ export const UIRenderMixin = {
     const repeatIcon = this._repeatMode === "one" ? "mdi:repeat-once" : (this._repeatMode === "all" ? "mdi:repeat" : "mdi:repeat-off");
     const repeatColor = this._repeatMode === "off" ? "rgba(255,255,255,0.4)" : "#fff";
 
+    const volIcon = volumePercent === 0 ? "mdi:volume-mute" : (volumePercent < 40 ? "mdi:volume-low" : (volumePercent < 80 ? "mdi:volume-medium" : "mdi:volume-high"));
+
+    // Lấy tiêu đề và ID bài đang phát (chuẩn hóa chữ thường để so sánh)
+    const playingTitleLower = String(playback.title || "").trim().toLowerCase();
+    const playingId = String(playback.track_id || "").trim();
+    
+    // Biến cờ để đảm bảo chỉ highlight duy nhất 1 bài trong danh sách
+    let hasHighlightedCurrent = false;
+
     return `
       <section class="panel panel-media">
         <div class="hero ${isPlaying ? "is-playing" : "is-paused"} wave-effect-${this._waveEffect}">
@@ -97,7 +106,22 @@ export const UIRenderMixin = {
           </div>
         </div>
 
-        <div class="subtabs" style="margin-top: 10px;">
+        <div class="modern-volume-container">
+          <div class="vol-side vol-side-left">
+            <ha-icon icon="${volIcon}"></ha-icon>
+            <button id="btn-vol-down" class="vol-btn" title="Giảm 5%"><ha-icon icon="mdi:minus"></ha-icon></button>
+          </div>
+          <div class="modern-volume-track-wrap">
+            <input id="media-volume" class="modern-volume-slider" type="range" min="0" max="100" step="1" value="${volumePercent}" />
+            <div class="modern-volume-fill" style="width: ${volumePercent}%"></div>
+          </div>
+          <div class="vol-side vol-side-right">
+            <button id="btn-vol-up" class="vol-btn" title="Tăng 5%"><ha-icon icon="mdi:plus"></ha-icon></button>
+            <span class="modern-volume-text">${volumePercent}%</span>
+          </div>
+        </div>
+
+        <div class="subtabs">
           <button class="subtab ${this._mediaSearchTab === "songs" ? "active" : ""}" data-media-tab="songs">Songs</button>
           <button class="subtab ${this._mediaSearchTab === "playlist" ? "active" : ""}" data-media-tab="playlist">Playlist</button>
           <button class="subtab ${this._mediaSearchTab === "zing" ? "active" : ""}" data-media-tab="zing">Zing MP3</button>
@@ -109,23 +133,32 @@ export const UIRenderMixin = {
           <button id="btn-search" class="icon-btn icon-btn-primary search-btn-hover" title="Tìm kiếm"><ha-icon icon="mdi:magnify"></ha-icon></button>
         </div>
 
-        <div class="volume-wrap">
-          <div class="label-line">
-            <span><ha-icon icon="mdi:volume-high"></ha-icon> Âm lượng</span>
-            <strong>${volumePercent}%</strong>
-          </div>
-          <input id="media-volume" type="range" min="0" max="100" step="1" value="${volumePercent}" />
-        </div>
-
         <div class="results">
           ${playback.items.length === 0 ? `
             <div class="empty">Chưa có kết quả tìm kiếm. Nhập từ khóa và bấm Tìm kiếm.</div>
           ` : playback.items.map((item, idx) => {
             const itemId = this._layIdMucMedia(item);
+            const safeItemId = String(itemId || "").trim();
             const itemTitle = item.title || `Bản nhạc ${idx + 1}`;
             const itemArtist = item.artist || item.channel || "Chưa rõ nghệ sĩ";
+            
+            // So sánh chéo cả ID và Title để đảm bảo đánh dấu đúng bài đang phát
+            const currentItemTitleLower = String(itemTitle).trim().toLowerCase();
+            let isPlayingItem = false;
+            
+            // Kiểm tra xem đã có bài nào được highlight chưa
+            if (!hasHighlightedCurrent) {
+              if (playingId && safeItemId && playingId === safeItemId) {
+                isPlayingItem = true;
+                hasHighlightedCurrent = true;
+              } else if (playingTitleLower && currentItemTitleLower && playingTitleLower === currentItemTitleLower) {
+                isPlayingItem = true;
+                hasHighlightedCurrent = true;
+              }
+            }
+
             return `
-            <div class="result-item ${itemId ? "playable" : ""}" data-id="${this._maHoaHtml(itemId)}" data-source="${this._maHoaHtml(listSource)}" role="${itemId ? "button" : ""}" tabindex="${itemId ? "0" : "-1"}">
+            <div class="result-item ${itemId ? "playable" : ""} ${isPlayingItem ? "is-playing-item" : ""}" data-id="${this._maHoaHtml(itemId)}" data-source="${this._maHoaHtml(listSource)}" role="${itemId ? "button" : ""}" tabindex="${itemId ? "0" : "-1"}">
               <div class="thumb-wrap">
                 ${item.thumbnail_url ? `<img class="thumb" src="${this._maHoaHtml(item.thumbnail_url)}" alt="" />` : `<div class="thumb fallback"><ha-icon icon="mdi:music-note"></ha-icon></div>`}
               </div>
@@ -145,7 +178,7 @@ export const UIRenderMixin = {
     `;
   },
 
-  _veTabDieuKhien() { /* Giữ nguyên hàm gốc */
+  _veTabDieuKhien() { 
     return `
       <section class="panel">
         <h3 class="section-title"><ha-icon icon="mdi:tune-variant"></ha-icon> Control</h3>
@@ -173,7 +206,7 @@ export const UIRenderMixin = {
     `;
   },
 
-  _veTabChat() { /* Giữ nguyên hàm gốc */
+  _veTabChat() { 
     const historyMarkup = this._chatHistory.length === 0 ? `<div class="chat-empty"><strong>Chưa có lịch sử chat</strong></div>` : this._chatHistory.map(item => `<div class="chat-row ${["user", "human", "client"].includes(String(item.message_type || item.role).toLowerCase()) ? "user" : "server"}"><div class="chat-item ${["user", "human", "client"].includes(String(item.message_type || item.role).toLowerCase()) ? "user" : "server"} hover-lift"><div class="chat-head">${["user", "human", "client"].includes(String(item.message_type || item.role).toLowerCase()) ? "Bạn" : "AI"}</div><div class="chat-content">${this._maHoaHtml(item.content || item.message || "")}</div></div></div>`).join("");
     return `
       <section class="panel panel-chat">
@@ -201,7 +234,7 @@ export const UIRenderMixin = {
     `;
   },
 
-  _veTabHeThong() { /* Giữ nguyên hàm gốc */
+  _veTabHeThong() { 
     const eqBandColumns = Math.max(1, this._eqBandCount || EQ_BAND_LABELS.length);
     const lightModes = [[0, "Mặc định"], [1, "Xoay vòng"], [2, "Nhảy 1"], [3, "Đơn sắc"], [4, "Nhảy 2"], [7, "Hơi thở"]];
     return `
@@ -371,7 +404,6 @@ export const UIRenderMixin = {
         .panel { border: 0; padding: 0 10px 12px; background: transparent; }
         .panel-media { padding: 0; overflow: hidden; }
 
-        /* Giao diện Nhạc hoàn toàn mới - Tối ưu diện tích */
         .hero {
           position: relative;
           display: flex; flex-direction: column;
@@ -379,15 +411,14 @@ export const UIRenderMixin = {
           background: #060e22; padding-bottom: 14px;
         }
 
-        /* Hình nền làm rõ nét hơn như yêu cầu */
         .hero-bg-img {
           position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
-          filter: saturate(1.2) brightness(0.4) blur(3px); transform: scale(1.05); pointer-events: none;
+          filter: saturate(1.1) brightness(0.65); transform: scale(1.05); pointer-events: none;
         }
 
         .hero-overlay {
           position: absolute; inset: 0;
-          background: linear-gradient(180deg, rgba(10, 20, 45, 0.3) 0%, rgba(6, 15, 36, 0.8) 100%);
+          background: linear-gradient(180deg, rgba(6, 15, 36, 0.2) 0%, rgba(6, 15, 36, 0.8) 100%);
           pointer-events: none;
         }
 
@@ -401,8 +432,8 @@ export const UIRenderMixin = {
 
         .hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
         .hero-titles { flex: 1; min-width: 0; }
-        .song-title { margin: 0; font-size: 16px; font-weight: 800; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-shadow: 0 2px 4px rgba(0,0,0,0.6); }
-        .song-sub { margin-top: 4px; color: #d3dffa; font-size: 12px; font-weight: 600; opacity: 0.8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .song-title { margin: 0; font-size: 16px; font-weight: 800; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-shadow: 0 2px 6px rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.5); }
+        .song-sub { margin-top: 4px; color: #d3dffa; font-size: 12px; font-weight: 600; text-shadow: 0 2px 4px rgba(0,0,0,0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
         .hero-top-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
         .pill { display: inline-flex; align-items: center; justify-content: center; min-width: 80px; height: 30px; padding: 0 10px; border-radius: 9px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; background: rgba(7, 16, 40, 0.7); border: 1px solid rgba(79, 141, 255, 0.3); backdrop-filter: blur(4px); flex-shrink: 0; }
@@ -414,13 +445,11 @@ export const UIRenderMixin = {
         .cover-disc ha-icon { color: #d8e4ff; --mdc-icon-size: 28px; }
         .hero.is-playing .cover-disc.spinning { animation: discSpin 8s linear infinite; }
 
-        /* Khối Waveform và Điều khiển được kéo lên - Relative Layout */
         .hero-bottom {
           position: relative; width: 100%; z-index: 1;
           margin-top: 20px; display: flex; flex-direction: column; gap: 8px;
         }
 
-        /* Gỡ nền và viền, thay đổi hiệu ứng hover */
         .controls-overlay {
           display: flex; align-items: center; justify-content: center; gap: 28px;
           padding: 0; background: transparent; border: none; box-shadow: none; backdrop-filter: none;
@@ -448,23 +477,46 @@ export const UIRenderMixin = {
           box-shadow: 0 0 6px rgba(162, 89, 255, 0.4);
         }
 
-        /* 3 HIỆU ỨNG NHẠC MỚI MƯỢT MÀ HƠN */
-        .hero.is-playing.wave-effect-0 .wave-bar { animation: waveDance calc(600ms + (var(--i) * 20ms)) ease-in-out infinite alternate; opacity: 1; }
-        .hero.is-playing.wave-effect-1 .wave-bar { animation: wavePulse calc(400ms + (var(--i) * 15ms)) cubic-bezier(0.4, 0, 0.2, 1) infinite alternate; opacity: 1; }
-        .hero.is-playing.wave-effect-2 .wave-bar { animation: waveBounce 1s cubic-bezier(0.68, -0.55, 0.26, 1.55) infinite; animation-delay: calc(var(--i) * 0.04s); opacity: 1; }
+        .hero.is-playing.wave-effect-0 .wave-bar { animation: waveDance calc(300ms + (var(--i) * 12ms)) ease-in-out infinite alternate; opacity: 1; }
+        .hero.is-playing.wave-effect-1 .wave-bar { animation: wavePulse calc(250ms + (var(--i) * 10ms)) cubic-bezier(0.4, 0, 0.2, 1) infinite alternate; opacity: 1; }
+        .hero.is-playing.wave-effect-2 .wave-bar { animation: waveSweep 0.5s cubic-bezier(0.4, 0, 0.2, 1) infinite; animation-delay: calc(var(--i) * 0.03s); opacity: 1; }
 
-        @keyframes waveDance { 0% { transform: scaleY(0.3); } 100% { transform: scaleY(1.1); } }
-        @keyframes wavePulse { 0% { transform: scaleY(0.1); opacity: 0.4; } 100% { transform: scaleY(1.3); opacity: 1; filter: brightness(1.3); } }
-        @keyframes waveBounce { 0%, 100% { transform: scaleY(0.2); } 50% { transform: scaleY(1); } }
+        @keyframes waveDance { 0% { transform: scaleY(0.2); } 100% { transform: scaleY(1.3); } }
+        @keyframes wavePulse { 
+          0% { transform: scaleY(0.1); background: linear-gradient(180deg, #ff5983, #ff8a63); box-shadow: 0 0 10px rgba(255, 89, 131, 0.6); } 
+          100% { transform: scaleY(1.2); background: linear-gradient(180deg, #a259ff, #6366f1); box-shadow: 0 0 10px rgba(162, 89, 255, 0.6); } 
+        }
+        @keyframes waveSweep { 0%, 100% { transform: scaleY(0.15); } 50% { transform: scaleY(1.4); } }
         @keyframes discSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-        .progress-row { display: flex; align-items: center; gap: 10px; padding: 4px 14px 12px; }
-        .time-text { font-size: 11px; font-weight: 700; color: #c4d4f2; }
+        .progress-row { display: flex; align-items: center; gap: 10px; padding: 4px 0 12px; }
+        .time-text { font-size: 11px; font-weight: 700; color: #c4d4f2; width: 55px; }
+        #playback-position { text-align: left; }
+        #playback-duration { text-align: right; }
+
         .progress-track-new { flex: 1; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; cursor: pointer; position: relative; }
         .progress-fill-new { height: 100%; background: linear-gradient(90deg, #764dff, #8b5cf6); border-radius: 2px; box-shadow: 0 0 8px rgba(120, 94, 255, 0.5); pointer-events: none;}
 
         .icon-btn-primary { background: linear-gradient(135deg, #4f8dff, #7a63ff); box-shadow: 0 6px 18px rgba(79, 141, 255, 0.35); }
         .icon-btn-primary:hover { box-shadow: 0 10px 24px rgba(79, 141, 255, 0.5); filter: brightness(1.15); }
+
+        .modern-volume-container { display: flex; align-items: center; gap: 10px; padding: 16px 14px 4px; }
+        
+        .vol-side { display: flex; align-items: center; gap: 6px; width: 55px; }
+        .vol-side-left { justify-content: flex-start; }
+        .vol-side-right { justify-content: flex-end; }
+        
+        .vol-side ha-icon { color: #a7b5d4; --mdc-icon-size: 18px; }
+        
+        .vol-btn { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #a7b5d4; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; transition: all 0.2s; }
+        .vol-btn:hover { background: rgba(255,255,255,0.15); color: #fff; border-color: rgba(255,255,255,0.3); transform: scale(1.1); }
+        .vol-btn ha-icon { --mdc-icon-size: 16px; margin: 0; }
+        
+        .modern-volume-track-wrap { position: relative; flex: 1; height: 6px; display: flex; align-items: center; }
+        .modern-volume-slider { position: absolute; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; margin: 0; }
+        .modern-volume-fill { position: absolute; height: 4px; background: linear-gradient(90deg, #4f8dff, #7a63ff); border-radius: 2px; z-index: 1; pointer-events: none; box-shadow: 0 0 8px rgba(122, 99, 255, 0.6); }
+        .modern-volume-track-wrap::before { content: ''; position: absolute; width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; }
+        .modern-volume-text { color: #a7b5d4; font-size: 11px; font-weight: 700; width: 25px; text-align: right; }
 
         .subtabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 12px 10px 6px; }
         .subtab { border: 1px solid rgba(70, 106, 233, 0.3); border-radius: 10px; padding: 8px 6px; background: rgba(255, 255, 255, 0.02); color: var(--muted); font-weight: 600; font-size: 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
@@ -477,17 +529,32 @@ export const UIRenderMixin = {
         .text-input { flex: 1; min-width: 0; height: 40px; border-radius: 12px; border: 1px solid rgba(79, 141, 255, 0.3); background: rgba(11, 24, 54, 0.6); color: #fff; padding: 8px 12px; font-size: 14px; outline: none; transition: border-color 0.3s, box-shadow 0.3s, background 0.3s; }
         .text-input:focus { border-color: rgba(122, 99, 255, 0.9); background: rgba(11, 24, 54, 0.9); box-shadow: 0 0 0 2px rgba(122, 99, 255, 0.4); }
 
-        .volume-wrap { padding: 6px 10px 10px; }
         .label-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; color: var(--text); font-size: 13px; }
         .small { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
         input[type="range"] { width: 100%; accent-color: #7a63ff; cursor: pointer; }
 
-        .results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px; padding: 0 10px 12px; max-height: 380px; overflow: auto; overflow-x: hidden; }
+        .results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px; padding: 0 10px 12px; max-height: 380px; overflow: auto; overflow-x: hidden; scroll-behavior: smooth; }
         .empty { border: 1px dashed rgba(79, 141, 255, 0.35); border-radius: 12px; padding: 14px; color: var(--muted); text-align: center; font-size: 13px; grid-column: 1 / -1; }
         .result-item { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid rgba(70, 106, 233, 0.25); border-radius: 14px; padding: 8px 10px; background: rgba(255, 255, 255, 0.02); width: 100%; box-sizing: border-box; min-height: 66px; }
         .result-meta { grid-column: 2; min-width: 0; max-width: 100%; overflow: hidden; }
         .result-item.playable { cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; }
-        .result-item.playable:hover { border-color: rgba(122, 99, 255, 0.6); background: rgba(122, 99, 255, 0.12); transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.25); }
+        
+        .result-item.playable:hover, .result-item.is-playing-item { 
+          border-color: rgba(122, 99, 255, 0.7); 
+          background: rgba(122, 99, 255, 0.12); 
+          transform: translateY(-2px); 
+          box-shadow: 0 6px 16px rgba(0,0,0,0.25); 
+        }
+        
+        .result-item.is-playing-item { 
+          border: 1px solid rgba(122, 99, 255, 0.9); 
+          background: rgba(122, 99, 255, 0.18); 
+        }
+        .result-item.is-playing-item .result-title { 
+          color: #a5b4fc; 
+          text-shadow: 0 0 8px rgba(165, 180, 252, 0.3); 
+        }
+
         .result-item.playable:active { transform: translateY(0); }
 
         .thumb-wrap { width: 50px; height: 50px; border-radius: 10px; overflow: hidden; background: rgba(255, 255, 255, 0.05); }
@@ -566,5 +633,26 @@ export const UIRenderMixin = {
     this._ganSuKien();
     this._dongBoTienDoDom();
     this._capNhatHenGioTienDo();
+
+    // Tự động cuộn đến bài đang phát sau khi render xong UI
+    if (this._activeTab === "media") {
+      const playbackInfo = this._thongTinPhat();
+      // Nhận diện theo ID, nếu không có ID thì nhận diện theo tiêu đề
+      const currentTrackIdent = playbackInfo.track_id || playbackInfo.title;
+      
+      // Chỉ cuộn màn hình nếu bài hát thực sự thay đổi
+      if (currentTrackIdent && this._lastScrolledTrackIdent !== currentTrackIdent) {
+        this._lastScrolledTrackIdent = currentTrackIdent;
+        
+        // Đặt timeout nhỏ để đảm bảo DOM đã render danh sách hoàn toàn
+        setTimeout(() => {
+          const activeItem = this.shadowRoot?.querySelector('.is-playing-item');
+          if (activeItem) {
+            // Cuộn tự động bài hát vào giữa (center) danh sách
+            activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 150);
+      }
+    }
   }
 };
