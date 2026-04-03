@@ -1,0 +1,11 @@
+{
+  "domain": "esp32_aibox_media_controller",
+  "name": "ESP32 AIBox Media Controller",
+  "version": "2026.04.03",
+  "integration_type": "device",
+  "documentation": "https://github.com/khaisilk1910/ESP32-AIBox-Media-Player-and-Controller",
+  "config_flow": true,
+  "requirements": [],
+  "codeowners": [],
+  "iot_class": "local_polling"
+}
