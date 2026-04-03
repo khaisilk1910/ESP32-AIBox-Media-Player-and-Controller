@@ -3,15 +3,41 @@ export const UIEventsMixin = {
     const root = this.shadowRoot;
     if (!root) return;
 
-    // --- TÍNH NĂNG MỚI: Event listener cho các tab thiết bị ---
-    root.querySelectorAll(".device-tab-btn").forEach((el) => {
-      el.addEventListener("click", () => {
-        const entityId = el.dataset.entity;
+    // --- SỰ KIỆN CHO THIẾT BỊ (DROPDOWN & PREV/NEXT) ---
+    const deviceSelector = root.getElementById("device-selector");
+    if (deviceSelector) {
+      deviceSelector.addEventListener("change", (ev) => {
+        const entityId = ev.target.value;
         if (entityId) {
           this._chuyenEntity(entityId);
         }
       });
-    });
+    }
+
+    const btnPrevDevice = root.getElementById("btn-prev-device");
+    const btnNextDevice = root.getElementById("btn-next-device");
+    if (btnPrevDevice || btnNextDevice) {
+      const aiboxEntities = this._timCacEntityAibox();
+      const currentIndex = aiboxEntities.indexOf(this._config?.entity);
+
+      if (btnPrevDevice) {
+        btnPrevDevice.addEventListener("click", () => {
+          if (aiboxEntities.length <= 1) return;
+          let nextIdx = currentIndex - 1;
+          if (nextIdx < 0) nextIdx = aiboxEntities.length - 1;
+          this._chuyenEntity(aiboxEntities[nextIdx]);
+        });
+      }
+
+      if (btnNextDevice) {
+        btnNextDevice.addEventListener("click", () => {
+          if (aiboxEntities.length <= 1) return;
+          let nextIdx = currentIndex + 1;
+          if (nextIdx >= aiboxEntities.length) nextIdx = 0;
+          this._chuyenEntity(aiboxEntities[nextIdx]);
+        });
+      }
+    }
 
     root.querySelectorAll("[data-tab]").forEach((el) => {
       el.addEventListener("click", () => {

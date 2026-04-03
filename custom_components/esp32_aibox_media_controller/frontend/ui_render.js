@@ -518,19 +518,25 @@ export const UIRenderMixin = {
       return;
     }
 
-    // --- TÍNH NĂNG MỚI: HTML của thanh chọn thiết bị ---
-    const deviceTabsHtml = aiboxEntities.length > 1 ? `
-      <div class="device-tabs-container">
-        ${aiboxEntities.map(ent => {
-          const friendlyName = this._hass.states[ent]?.attributes?.friendly_name || ent.replace("media_player.", "");
-          const isActive = this._config.entity === ent;
-          return `
-            <button class="device-tab-btn ${isActive ? 'active' : ''} hover-pop" data-entity="${ent}" title="${ent}">
-              <ha-icon icon="mdi:speaker-wireless"></ha-icon>
-              <span>${this._maHoaHtml(friendlyName)}</span>
-            </button>
-          `;
-        }).join('')}
+    // --- TÍNH NĂNG MỚI: Dropdown Chọn Thiết Bị thay thế các Tab ---
+    const deviceSelectorHtml = aiboxEntities.length > 1 ? `
+      <div class="device-selector-container">
+        <button id="btn-prev-device" class="device-nav-btn" title="Thiết bị trước">
+          <ha-icon icon="mdi:chevron-left"></ha-icon>
+        </button>
+        <div class="device-select-wrapper">
+          <ha-icon icon="mdi:speaker-wireless" class="device-icon"></ha-icon>
+          <select id="device-selector" class="device-dropdown">
+            ${aiboxEntities.map(ent => {
+              const friendlyName = this._hass.states[ent]?.attributes?.friendly_name || ent.replace("media_player.", "");
+              const isSelected = this._config.entity === ent ? 'selected' : '';
+              return `<option value="${ent}" ${isSelected}>${this._maHoaHtml(friendlyName)}</option>`;
+            }).join('')}
+          </select>
+        </div>
+        <button id="btn-next-device" class="device-nav-btn" title="Thiết bị tiếp theo">
+          <ha-icon icon="mdi:chevron-right"></ha-icon>
+        </button>
       </div>
     ` : '';
 
@@ -588,40 +594,79 @@ export const UIRenderMixin = {
           padding: 0;
         }
 
-        /* --- CSS CHO THẺ THIẾT BỊ (AUTO-SCAN) --- */
-        .device-tabs-container {
-          display: flex;
-          gap: 8px;
-          padding: 12px 10px 0;
-          overflow-x: auto;
-          scrollbar-width: none; /* Firefox */
-        }
-        .device-tabs-container::-webkit-scrollbar {
-          display: none; /* Safari and Chrome */
-        }
-        .device-tab-btn {
+        /* --- CSS CHO DROPDOWN CHỌN THIẾT BỊ --- */
+        .device-selector-container {
           display: flex;
           align-items: center;
-          gap: 6px;
-          padding: 8px 14px;
-          border-radius: 12px;
+          gap: 8px;
+          padding: 12px 10px 0;
+          width: 100%;
+        }
+        .device-nav-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
           border: 1px solid rgba(101, 125, 255, 0.35);
           background: rgba(10, 22, 48, 0.75);
           color: var(--muted);
           cursor: pointer;
-          white-space: nowrap;
+          flex-shrink: 0;
+          transition: all 0.2s ease;
+        }
+        .device-nav-btn:hover {
+          background: rgba(255, 255, 255, 0.1);
+          color: #fff;
+        }
+        .device-nav-btn:active {
+          transform: scale(0.95);
+        }
+        .device-select-wrapper {
+          position: relative;
+          flex: 1;
+          display: flex;
+          align-items: center;
+          background: linear-gradient(120deg, rgba(100, 102, 241, 0.15), rgba(139, 92, 246, 0.15));
+          border: 1px solid rgba(100, 102, 241, 0.4);
+          border-radius: 10px;
+          padding: 0 10px;
+          height: 36px;
+          overflow: hidden;
+        }
+        .device-icon {
+          color: #8b5cf6;
+          --mdc-icon-size: 18px;
+          margin-right: 8px;
+          pointer-events: none;
+        }
+        .device-dropdown {
+          flex: 1;
+          width: 100%;
+          height: 100%;
+          background: transparent;
+          border: none;
+          color: #fff;
           font-weight: 700;
           font-size: 13px;
-          flex-shrink: 0;
+          outline: none;
+          cursor: pointer;
+          appearance: none;
+          -webkit-appearance: none;
+          padding-right: 20px;
         }
-        .device-tab-btn.active {
-          background: linear-gradient(120deg, #6466f1, #8b5cf6);
+        .device-dropdown option {
+          background: var(--bg-card);
           color: #fff;
-          box-shadow: 0 4px 12px rgba(122, 99, 255, 0.3);
-          border-color: transparent;
         }
-        .device-tab-btn ha-icon {
-          --mdc-icon-size: 18px;
+        .device-select-wrapper::after {
+          content: '▼';
+          position: absolute;
+          right: 12px;
+          color: #8b5cf6;
+          font-size: 10px;
+          pointer-events: none;
         }
 
         /* --- SỬA LỖI RESPONSIVE CHO TOP TABS: Tự co giãn & Ẩn chữ trên Mobile --- */
@@ -1384,7 +1429,7 @@ export const UIRenderMixin = {
       </style>
 
       <ha-card>
-        ${deviceTabsHtml}
+        ${deviceSelectorHtml}
         <div class="top-tabs">
           ${tabs
             .map(
