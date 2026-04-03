@@ -108,7 +108,7 @@ export const UIRenderMixin = {
 
         <div class="modern-volume-container">
           <div class="vol-side vol-side-left">
-            <ha-icon icon="${volIcon}"></ha-icon>
+            <ha-icon id="btn-mute-toggle" class="${volumePercent === 0 ? 'is-muted' : ''}" icon="${volIcon}" title="Nhấn để tắt/mở âm" style="cursor: pointer; transition: color 0.2s;"></ha-icon>
             <button id="btn-vol-down" class="vol-btn" title="Giảm 5%"><ha-icon icon="mdi:minus"></ha-icon></button>
           </div>
           <div class="modern-volume-track-wrap">
@@ -507,6 +507,11 @@ export const UIRenderMixin = {
         .vol-side-right { justify-content: flex-end; }
         
         .vol-side ha-icon { color: #a7b5d4; --mdc-icon-size: 18px; }
+        
+        /* -- CSS mới thêm cho nút mute -- */
+        .vol-side ha-icon#btn-mute-toggle.is-muted { color: #ef4444; }
+        .vol-side ha-icon#btn-mute-toggle:hover { color: #fff; }
+        .vol-side ha-icon#btn-mute-toggle.is-muted:hover { color: #ff6b6b; }
         
         .vol-btn { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #a7b5d4; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; transition: all 0.2s; }
         .vol-btn:hover { background: rgba(255,255,255,0.15); color: #fff; border-color: rgba(255,255,255,0.3); transform: scale(1.1); }

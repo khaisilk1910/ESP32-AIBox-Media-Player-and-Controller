@@ -28,6 +28,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._mediaQueryFocused = false;
 
     this._volumeLevel = 0;
+    this._preMuteVolumeLevel = null; // Biến lưu volume trước khi mute
     this._wakeSensitivity = 0.9;
     this._lastPlayPauseSent = null;
 
@@ -74,7 +75,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
       thumbnail_url: "",
       duration: 0,
     };
-    this._optimisticTrackUntil = 0; // BIẾN MỚI
+    this._optimisticTrackUntil = 0; 
     this._forcePauseUntil = 0;
     this._optimisticPlayUntil = 0;
     this._pendingSwitches = {};
@@ -112,6 +113,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._repeatMode = "all"; 
     this._waveEffect = 0;
 
+    this._preMuteVolumeLevel = null; // Đặt lại biến
     this._liveTrackKey = "";
     this._livePositionSeconds = 0;
     this._ignorePositionUntil = 0;
@@ -121,7 +123,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._nowPlayingCache = {
       trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0,
     };
-    this._optimisticTrackUntil = 0; // Đặt lại bộ đệm ảo
+    this._optimisticTrackUntil = 0; 
     this._forcePauseUntil = 0;
     this._optimisticPlayUntil = 0;
     this._pendingSwitches = {};

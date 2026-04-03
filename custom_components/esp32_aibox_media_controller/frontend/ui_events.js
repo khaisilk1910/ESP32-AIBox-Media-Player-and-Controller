@@ -247,13 +247,34 @@ export const UIEventsMixin = {
       });
     }
 
+    // -- THÊM MỚI SỰ KIỆN TOGGLE MUTE --
+    const btnMuteToggle = root.getElementById("btn-mute-toggle");
+    if (btnMuteToggle) {
+      btnMuteToggle.addEventListener("click", async () => {
+        if (this._volumeLevel > 0) {
+          // Lưu lại và mute
+          this._preMuteVolumeLevel = this._volumeLevel;
+          this._volumeLevel = 0;
+        } else {
+          // Khôi phục lại volume cũ hoặc mặc định 50%
+          this._volumeLevel = this._preMuteVolumeLevel || 0.5;
+          this._preMuteVolumeLevel = null;
+        }
+        this._veGiaoDien(); // Render lại giao diện ngay để icon đổi màu/hình
+        await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel });
+      });
+    }
+
     const volumeSlider = root.getElementById("media-volume");
     if (volumeSlider) {
       volumeSlider.addEventListener("input", (ev) => {
         this._volumeLevel = Number(ev.target.value) / 100;
+        // Nếu thay đổi thủ công, xóa lịch sử mute trước đó
+        if (this._volumeLevel > 0) this._preMuteVolumeLevel = null; 
       });
       volumeSlider.addEventListener("change", async (ev) => {
         this._volumeLevel = Number(ev.target.value) / 100;
+        if (this._volumeLevel > 0) this._preMuteVolumeLevel = null;
         await this._goiDichVu("media_player", "volume_set", {
           volume_level: this._volumeLevel,
         });
@@ -265,6 +286,7 @@ export const UIEventsMixin = {
       btnVolDown.addEventListener("click", async () => {
         let newVol = Math.max(0, Math.round(this._volumeLevel * 100) - 5);
         this._volumeLevel = newVol / 100;
+        if (this._volumeLevel > 0) this._preMuteVolumeLevel = null;
         this._veGiaoDien();
         await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel });
       });
@@ -275,6 +297,7 @@ export const UIEventsMixin = {
       btnVolUp.addEventListener("click", async () => {
         let newVol = Math.min(100, Math.round(this._volumeLevel * 100) + 5);
         this._volumeLevel = newVol / 100;
+        if (this._volumeLevel > 0) this._preMuteVolumeLevel = null;
         this._veGiaoDien();
         await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel });
       });
