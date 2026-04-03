@@ -287,7 +287,6 @@ export const CoreLogicMixin = {
     const now = Date.now();
     let posRaw = Number.isFinite(Number(positionSeconds)) ? Math.max(0, Number(positionSeconds)) : 0;
     
-    // Bỏ qua giá trị vị trí bị cũ do HA đồng bộ chậm
     if (this._ignorePositionUntil && now < this._ignorePositionUntil) {
       posRaw = 0;
     } else if (this._ignorePositionUntil && now >= this._ignorePositionUntil) {
@@ -340,6 +339,12 @@ export const CoreLogicMixin = {
   async _xuLyHetBai() {
     this._livePositionSeconds = 0;
     this._ignorePositionUntil = Date.now() + 4000;
+
+    // --- FIX LỖI KẸT HIGHLIGHT KHI AUTO NEXT ---
+    this._optimisticTrackUntil = 0;
+    this._nowPlayingCache = { trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0 };
+    // -------------------------------------------
+
     this._dongBoTienDoDom();
 
     if (this._repeatMode === "one") {
@@ -387,6 +392,22 @@ export const CoreLogicMixin = {
     const play = attrs.last_music_play || {};
     const aibox = attrs.aibox_playback || {};
     const items = Array.isArray(search.items) ? search.items : [];
+
+    // --- Ưu tiên dữ liệu hiển thị (optimistic cache) thay vì chờ HA ---
+    if (this._optimisticTrackUntil && Date.now() < this._optimisticTrackUntil && this._nowPlayingCache && this._nowPlayingCache.trackKey) {
+       return {
+           title: this._nowPlayingCache.title,
+           artist: this._nowPlayingCache.artist,
+           duration: this._nowPlayingCache.duration,
+           position: this._livePositionSeconds,
+           source: this._nowPlayingCache.source,
+           thumbnail_url: this._nowPlayingCache.thumbnail_url,
+           track_key: this._nowPlayingCache.trackKey,
+           track_id: this._nowPlayingCache.trackId,
+           play, search, items, aibox
+       };
+    }
+
     const stateObj = this._doiTuongTrangThai();
     const aiboxTrackId = this._chuoiKhongRongDauTien(aibox.id, aibox.video_id, aibox.song_id, aibox.track_id);
     const playId = this._chuoiKhongRongDauTien(play.id, play.video_id, play.song_id, play.track_id, aiboxTrackId);
@@ -423,7 +444,7 @@ export const CoreLogicMixin = {
     } else {
       const hasFreshTrack = Boolean(rawTrackKey) && Boolean(title);
       if (hasFreshTrack) {
-        this._nowPlayingCache = { trackKey: rawTrackKey, title, artist, source, thumbnail_url: thumbnailUrl, duration };
+        this._nowPlayingCache = { trackKey: rawTrackKey, title, artist, source, thumbnail_url: thumbnailUrl, duration, trackId: playId || aiboxTrackId };
       } else {
         const cached = this._nowPlayingCache;
         const canUseCache = Boolean(cached.trackKey) && (aiboxPlaying || aiboxPaused || position > 0 || duration > 0 || Boolean(this._chuoiKhongRongDauTien(source, playId, aiboxTrackId)));
@@ -452,11 +473,22 @@ export const CoreLogicMixin = {
     });
     const entityPlaying = entityState === "playing" || rawPlaybackState === "playing";
     const entityPaused = entityState === "paused" || entityState === "idle" || entityState === "off" || rawPlaybackState === "paused" || rawPlaybackState === "stopped" || rawPlaybackState === "idle" || rawPlaybackState === "off";
+    
+    // --- Ghi đè trạng thái hiển thị bằng optimistic ngay lập tức ---
     const forcedPaused = Date.now() < this._forcePauseUntil;
-    const optimisticPlaying = Date.now() < this._optimisticPlayUntil && this._lastPlayPauseSent === "play" && !forcedPaused && !aiboxPaused && !entityPaused;
-    const hasExplicitAiboxState = hasAiboxState && (aiboxPlaying || aiboxPaused);
-    const isPlaying = !forcedPaused && !aiboxPaused && (hasExplicitAiboxState ? aiboxPlaying : entityPlaying || (!entityPaused && optimisticPlaying));
-    const currentState = isPlaying ? "playing" : aiboxPaused || entityPaused || this._lastPlayPauseSent === "pause" ? "paused" : "idle";
+    const optimisticPlaying = Date.now() < this._optimisticPlayUntil && this._lastPlayPauseSent === "play";
+    
+    let isPlaying = false;
+    if (forcedPaused) {
+        isPlaying = false;
+    } else if (optimisticPlaying) {
+        isPlaying = true;
+    } else {
+        const hasExplicitAiboxState = hasAiboxState && (aiboxPlaying || aiboxPaused);
+        isPlaying = !aiboxPaused && (hasExplicitAiboxState ? aiboxPlaying : entityPlaying);
+    }
+    
+    const currentState = isPlaying ? "playing" : (forcedPaused || aiboxPaused || entityPaused || this._lastPlayPauseSent === "pause") ? "paused" : "idle";
 
     return { isPlaying, currentState, entityState, rawPlaybackState, aiboxPlaying, aiboxPaused, entityPlaying, entityPaused };
   },
@@ -576,14 +608,37 @@ export const CoreLogicMixin = {
     this._ignorePositionUntil = Date.now() + 4000;
     this._dongBoTienDoDom();
 
+    // --- BUỘC HIỂN THỊ OPTIMISTIC NGAY LẬP TỨC ---
+    const itemTitle = item.title || "Đang tải...";
+    const itemArtist = item.artist || item.channel || "Chưa rõ nghệ sĩ";
+    const itemDuration = item.duration_seconds || 0;
+    const itemThumb = item.thumbnail_url || "";
+    
+    this._nowPlayingCache = {
+        trackKey: `${normalizedSource}|${itemTitle}|${itemArtist}|${itemDuration}`,
+        trackId: resolvedId, 
+        title: itemTitle,
+        artist: itemArtist,
+        source: normalizedSource,
+        thumbnail_url: itemThumb,
+        duration: itemDuration
+    };
+    this._optimisticTrackUntil = Date.now() + 6000;
+
+    this._lastPlayPauseSent = "play";
+    this._forcePauseUntil = 0;
+    this._optimisticPlayUntil = Date.now() + 5000;
+    this._livePlaying = true;
+    this._liveTickAt = Date.now();
+    this._veGiaoDien(); // Render tức thời ngay sau khi set cache
+    // ---------------------------------------------
+
     if (normalizedSource.includes("zing")) {
       await this._goiDichVu("media_player", "play_zing", { song_id: resolvedId });
     } else {
       await this._goiDichVu("media_player", "play_youtube", { video_id: resolvedId });
     }
-    this._lastPlayPauseSent = "play";
-    this._forcePauseUntil = 0;
-    this._optimisticPlayUntil = Date.now() + 5000;
+    
     await this._lamMoiEntity(300, 2);
   },
 
@@ -593,14 +648,6 @@ export const CoreLogicMixin = {
     const playbackState = this._layTrangThaiHienThiPhat(playback, stateObj);
     const nextAction = playbackState.isPlaying ? "pause" : "play";
 
-    try {
-      await this._goiDichVu("media_player", nextAction === "pause" ? "media_pause" : "media_play");
-    } catch (err) {
-      console.warn("Fallback to media_play_pause", err);
-      // Tự động dùng lệnh thay thế nếu hệ thống không hỗ trợ play/pause rời rạc
-      await this._goiDichVu("media_player", "media_play_pause");
-    }
-    
     this._lastPlayPauseSent = nextAction;
     if (nextAction === "pause") {
       this._forcePauseUntil = Date.now() + 5000; this._optimisticPlayUntil = 0;
@@ -612,6 +659,17 @@ export const CoreLogicMixin = {
         this._dongBoTienDoDom(); this._capNhatHenGioTienDo();
       }
     }
+    
+    // Render ngay tức khắc để nút đổi icon
+    this._veGiaoDien();
+
+    try {
+      await this._goiDichVu("media_player", nextAction === "pause" ? "media_pause" : "media_play");
+    } catch (err) {
+      console.warn("Fallback to media_play_pause", err);
+      await this._goiDichVu("media_player", "media_play_pause");
+    }
+    
     await this._lamMoiEntity(300);
   },
 

@@ -62,7 +62,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._progressTimerId = null;
     this._liveTrackKey = "";
     this._livePositionSeconds = 0;
-    this._ignorePositionUntil = 0; // THÊM MỚI
+    this._ignorePositionUntil = 0;
     this._liveDurationSeconds = 0;
     this._livePlaying = false;
     this._liveTickAt = 0;
@@ -74,6 +74,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
       thumbnail_url: "",
       duration: 0,
     };
+    this._optimisticTrackUntil = 0; // BIẾN MỚI
     this._forcePauseUntil = 0;
     this._optimisticPlayUntil = 0;
     this._pendingSwitches = {};
@@ -113,13 +114,14 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
 
     this._liveTrackKey = "";
     this._livePositionSeconds = 0;
-    this._ignorePositionUntil = 0; // THÊM MỚI
+    this._ignorePositionUntil = 0;
     this._liveDurationSeconds = 0;
     this._livePlaying = false;
     this._liveTickAt = 0;
     this._nowPlayingCache = {
       trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0,
     };
+    this._optimisticTrackUntil = 0; // Đặt lại bộ đệm ảo
     this._forcePauseUntil = 0;
     this._optimisticPlayUntil = 0;
     this._pendingSwitches = {};

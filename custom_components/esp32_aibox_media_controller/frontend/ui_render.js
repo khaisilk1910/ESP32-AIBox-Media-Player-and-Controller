@@ -391,7 +391,7 @@ export const UIRenderMixin = {
         .device-nav-btn:active { transform: scale(0.95); }
         .device-select-wrapper { position: relative; flex: 1; display: flex; align-items: center; background: linear-gradient(120deg, rgba(100, 102, 241, 0.15), rgba(139, 92, 246, 0.15)); border: 1px solid rgba(100, 102, 241, 0.4); border-radius: 10px; padding: 0 10px; height: 36px; overflow: hidden; }
         .device-icon { color: #8b5cf6; --mdc-icon-size: 18px; margin-right: 8px; pointer-events: none; }
-        .device-dropdown { flex: 1; width: 100%; height: 100%; background: transparent; border: none; color: #fff; font-weight: 700; font-size: 13px; outline: none; cursor: pointer; appearance: none; -webkit-appearance: none; padding-right: 20px; }
+        .device-dropdown { flex: 1; width: 100%; height: 100%; background: transparent; border: none; color: #fff; font-weight: 700; font-size: 13px; outline: none; cursor: pointer; appearance: none; -webkit-appearance: none; padding-right: 20px; text-align: center; text-align-last: center; }
         .device-dropdown option { background: var(--bg-card); color: #fff; }
         .device-select-wrapper::after { content: '▼'; position: absolute; right: 12px; color: #8b5cf6; font-size: 10px; pointer-events: none; }
 

@@ -164,8 +164,22 @@ export const UIEventsMixin = {
         ev.preventDefault(); ev.stopPropagation();
         this._livePositionSeconds = 0;
         this._ignorePositionUntil = Date.now() + 4000;
+        this._lastPlayPauseSent = "play"; 
+        this._forcePauseUntil = 0;
+        this._optimisticPlayUntil = Date.now() + 5000;
+        
+        // --- FIX LỖI KẸT HIGHLIGHT ---
+        this._optimisticTrackUntil = 0;
+        this._nowPlayingCache = { trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0 };
+        // -----------------------------
+
+        this._livePlaying = true;
         this._dongBoTienDoDom();
-        try { await this._goiDichVu("media_player", "media_previous_track"); } catch(e){}
+        this._veGiaoDien(); // RENDER NGAY LẬP TỨC
+        try { 
+          await this._goiDichVu("media_player", "media_previous_track"); 
+          await this._lamMoiEntity(300, 2); // Thêm Refresh entity để lấy ngay thông tin bài mới
+        } catch(e){}
       });
     }
 
@@ -188,17 +202,22 @@ export const UIEventsMixin = {
         this._ignorePositionUntil = Date.now() + 4000;
         this._liveDurationSeconds = 0;
         this._livePlaying = false;
+        
+        // Dừng thì cũng xóa cache
+        this._optimisticTrackUntil = 0;
         this._nowPlayingCache = {
           trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0,
         };
+        
+        this._lastPlayPauseSent = "pause";
         this._dongBoTienDoDom();
         this._capNhatHenGioTienDo();
+        this._veGiaoDien(); // RENDER NGAY LẬP TỨC
         try {
           await this._goiDichVu("media_player", "media_stop");
         } catch (e) {
           await this._goiDichVu("media_player", "media_pause");
         }
-        this._lastPlayPauseSent = "pause";
         await this._lamMoiEntity(300);
       });
     }
@@ -209,8 +228,22 @@ export const UIEventsMixin = {
         ev.preventDefault(); ev.stopPropagation();
         this._livePositionSeconds = 0;
         this._ignorePositionUntil = Date.now() + 4000;
+        this._lastPlayPauseSent = "play";
+        this._forcePauseUntil = 0;
+        this._optimisticPlayUntil = Date.now() + 5000;
+        
+        // --- FIX LỖI KẸT HIGHLIGHT ---
+        this._optimisticTrackUntil = 0;
+        this._nowPlayingCache = { trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0 };
+        // -----------------------------
+
+        this._livePlaying = true;
         this._dongBoTienDoDom();
-        try { await this._goiDichVu("media_player", "media_next_track"); } catch(e){}
+        this._veGiaoDien(); // RENDER NGAY LẬP TỨC
+        try { 
+          await this._goiDichVu("media_player", "media_next_track"); 
+          await this._lamMoiEntity(300, 2); // Thêm Refresh entity để lấy ngay thông tin bài mới
+        } catch(e){}
       });
     }
 
@@ -227,13 +260,12 @@ export const UIEventsMixin = {
       });
     }
 
-    // Logic xử lý 2 nút bấm +- Volume mới thêm
     const btnVolDown = root.getElementById("btn-vol-down");
     if (btnVolDown) {
       btnVolDown.addEventListener("click", async () => {
         let newVol = Math.max(0, Math.round(this._volumeLevel * 100) - 5);
         this._volumeLevel = newVol / 100;
-        this._veGiaoDien(); // Vẽ lại liền để thanh trượt chạy mượt
+        this._veGiaoDien();
         await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel });
       });
     }
@@ -243,7 +275,7 @@ export const UIEventsMixin = {
       btnVolUp.addEventListener("click", async () => {
         let newVol = Math.min(100, Math.round(this._volumeLevel * 100) + 5);
         this._volumeLevel = newVol / 100;
-        this._veGiaoDien(); // Vẽ lại liền để thanh trượt chạy mượt
+        this._veGiaoDien();
         await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel });
       });
     }
