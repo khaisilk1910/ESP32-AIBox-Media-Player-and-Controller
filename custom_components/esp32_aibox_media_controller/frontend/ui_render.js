@@ -43,7 +43,7 @@ export const UIRenderMixin = {
           <div class="hero-overlay"></div>
           <div class="hero-content">
           <div class="hero-top">
-            <div>
+            <div class="hero-titles">
               <h2 class="song-title">${this._maHoaHtml(playback.title)}</h2>
               <div class="song-sub">${this._maHoaHtml(playback.artist || "Chưa rõ nghệ sĩ")}</div>
             </div>
@@ -539,7 +539,6 @@ export const UIRenderMixin = {
 
         * {
           box-sizing: border-box;
-          /* Global smooth transitions cho hover */
           transition: background 0.25s cubic-bezier(0.4, 0, 0.2, 1), 
                       border-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), 
                       box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1),
@@ -550,27 +549,28 @@ export const UIRenderMixin = {
           width: 100%;
           max-width: none;
           margin: 0;
-          border-radius: 24px; /* BO TRÒN 4 GÓC MẠNH HƠN */
-          overflow: hidden;    /* CẮT NỀN THEO GÓC BO TRÒN */
-          border: 1px solid rgba(255, 255, 255, 0.06); /* Viền mờ hiện đại */
+          border-radius: 24px;
+          overflow: hidden;
+          border: 1px solid rgba(255, 255, 255, 0.06);
           background:
             radial-gradient(1400px 400px at 0% -20%, rgba(84, 81, 255, 0.18), transparent 52%),
             radial-gradient(1000px 380px at 100% -10%, rgba(66, 167, 255, 0.16), transparent 58%),
             linear-gradient(180deg, #040b1d 0%, var(--bg-card) 100%);
           color: var(--text);
-          box-shadow: 0 16px 32px rgba(0, 0, 0, 0.3); /* Bóng đổ cho thẻ nổi bật hơn */
+          box-shadow: 0 16px 32px rgba(0, 0, 0, 0.3);
           padding: 0;
         }
 
+        /* --- SỬA LỖI RESPONSIVE CHO TOP TABS: Tự co giãn & Ẩn chữ trên Mobile --- */
         .top-tabs {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 6px; /* Nhỏ gọn hơn */
-          padding: 6px 8px; /* Thu gọn padding */
+          display: flex;
+          flex-wrap: nowrap;
+          gap: 6px;
+          padding: 6px 8px;
           border: 1px solid rgba(101, 125, 255, 0.35);
           border-radius: 16px;
           background: rgba(10, 22, 48, 0.75);
-          margin: 10px 10px 12px; /* Margin lề cho ha-card đã bo tròn */
+          margin: 10px 10px 12px;
         }
 
         .tab-btn {
@@ -578,14 +578,23 @@ export const UIRenderMixin = {
           background: rgba(255, 255, 255, 0.03);
           color: var(--muted);
           border-radius: 12px;
-          padding: 8px 6px; /* Nhỏ gọn lại */
-          font-size: 13px; /* Giảm font size */
+          padding: 8px 10px;
+          font-size: 13px;
           font-weight: 700;
           display: flex;
           align-items: center;
           justify-content: center;
           gap: 6px;
           cursor: pointer;
+          flex: 1 1 0; /* Tự chia đều 4 nút và co giãn bằng nhau */
+          min-width: 0; /* Bắt buộc để flex item có thể thu nhỏ */
+        }
+        
+        .tab-btn span {
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          display: block;
         }
 
         .tab-btn:hover {
@@ -602,7 +611,7 @@ export const UIRenderMixin = {
         }
 
         .panel {
-          border: 0; /* Bỏ border vì card đã bo tròn tổng */
+          border: 0;
           padding: 0 10px 12px;
           background: transparent;
         }
@@ -614,7 +623,7 @@ export const UIRenderMixin = {
 
         .hero {
           position: relative;
-          padding: 12px 14px; /* Giảm padding hero */
+          padding: 12px 14px;
           border-bottom: 1px solid rgba(70, 106, 233, 0.25);
           overflow: hidden;
           background:
@@ -651,10 +660,15 @@ export const UIRenderMixin = {
           align-items: flex-start;
           gap: 12px;
         }
+        
+        .hero-titles {
+          flex: 1;
+          min-width: 0;
+        }
 
         .song-title {
           margin: 0;
-          font-size: 15px; /* Nhỏ hơn */
+          font-size: 15px;
           line-height: 1.2;
           font-weight: 800;
           letter-spacing: 0.1px;
@@ -671,6 +685,9 @@ export const UIRenderMixin = {
           font-size: 13px;
           font-weight: 600;
           opacity: 0.8;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
 
         .pill {
@@ -678,28 +695,30 @@ export const UIRenderMixin = {
           align-items: center;
           justify-content: center;
           min-width: 80px;
-          height: 30px; /* Thấp hơn */
+          height: 30px;
           padding: 0 10px;
           border-radius: 9px;
-          font-size: 11px; /* Font bé hơn */
+          font-size: 11px;
           font-weight: 800;
           letter-spacing: 0.5px;
           background: rgba(7, 16, 40, 0.7);
           border: 1px solid rgba(79, 141, 255, 0.3);
           backdrop-filter: blur(4px);
+          flex-shrink: 0;
         }
 
         .player-stage {
           margin-top: 12px;
-          display: grid;
-          grid-template-columns: 76px minmax(0, 1fr); /* Đĩa than thu nhỏ 92->76 */
+          display: flex;
           gap: 12px;
-          align-items: center; /* Đưa về giữa thay vì end */
+          align-items: center;
+          width: 100%;
         }
 
         .cover-disc {
           width: 76px;
           height: 76px;
+          flex: 0 0 76px;
           border-radius: 50%;
           overflow: hidden;
           border: 2px solid rgba(118, 159, 255, 0.4);
@@ -734,8 +753,10 @@ export const UIRenderMixin = {
         }
 
         .wave-area {
+          flex: 1 1 auto;
           position: relative;
-          height: 76px; /* Cho cân đối với đĩa than */
+          height: 76px;
+          min-width: 0;
           border-radius: 12px;
           overflow: hidden;
           background: linear-gradient(180deg, rgba(27, 46, 86, 0.2), rgba(15, 31, 68, 0.1));
@@ -768,19 +789,19 @@ export const UIRenderMixin = {
 
         .controls-row {
           position: absolute;
-          left: 50%;
-          top: 50%;
-          transform: translate(-50%, -50%);
+          inset: 0;
           display: flex;
-          justify-content: center;
-          gap: 10px;
-          margin: 0;
+          justify-content: space-evenly;
+          align-items: center;
+          gap: 4px;
+          padding: 0 4px;
         }
 
         .icon-btn {
           border: 0;
-          width: 44px; /* Nút thu gọn */
+          width: 44px;
           height: 44px;
+          flex: 0 1 44px;
           border-radius: 12px;
           background: rgba(16, 32, 66, 0.85);
           color: #fff;
@@ -793,12 +814,12 @@ export const UIRenderMixin = {
         }
 
         .icon-btn ha-icon {
-          --mdc-icon-size: 24px; /* Icon bé đi một chút */
+          --mdc-icon-size: 24px;
         }
 
         .icon-btn:hover {
           background: rgba(30, 50, 95, 0.96);
-          transform: translateY(-2px) scale(1.05); /* Hover nổi lên & to ra nhẹ */
+          transform: translateY(-2px) scale(1.05);
           box-shadow: 0 8px 16px rgba(0,0,0,0.3);
         }
         
@@ -827,7 +848,7 @@ export const UIRenderMixin = {
 
         .progress-track {
           margin-top: 6px;
-          height: 6px; /* Mảnh hơn xíu */
+          height: 6px;
           width: 100%;
           border-radius: 999px;
           background: rgba(117, 136, 170, 0.3);
@@ -915,8 +936,7 @@ export const UIRenderMixin = {
         }
 
         .search-row {
-          display: grid;
-          grid-template-columns: 1fr auto;
+          display: flex;
           gap: 10px;
           padding: 8px 10px;
         }
@@ -924,6 +944,7 @@ export const UIRenderMixin = {
         .search-row .icon-btn {
           width: 40px;
           height: 40px;
+          flex: 0 0 40px;
           border-radius: 12px;
         }
 
@@ -932,8 +953,9 @@ export const UIRenderMixin = {
         }
 
         .text-input {
-          width: 100%;
-          min-height: 40px;
+          flex: 1;
+          min-width: 0;
+          height: 40px;
           border-radius: 12px;
           border: 1px solid rgba(79, 141, 255, 0.3);
           background: rgba(11, 24, 54, 0.6);
@@ -981,7 +1003,7 @@ export const UIRenderMixin = {
           grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
           gap: 10px;
           padding: 0 10px 12px;
-          max-height: 380px; /* Thu gọn chiều cao list một chút */
+          max-height: 380px;
           overflow: auto;
           overflow-x: hidden;
         }
@@ -998,7 +1020,7 @@ export const UIRenderMixin = {
 
         .result-item {
           display: grid;
-          grid-template-columns: 50px minmax(0, 1fr) auto; /* Thu nhỏ thumbnail */
+          grid-template-columns: 50px minmax(0, 1fr) auto;
           gap: 10px;
           align-items: center;
           border: 1px solid rgba(70, 106, 233, 0.25);
@@ -1007,7 +1029,7 @@ export const UIRenderMixin = {
           background: rgba(255, 255, 255, 0.02);
           width: 100%;
           box-sizing: border-box;
-          min-height: 66px; /* Gọn hơn */
+          min-height: 66px;
         }
 
         .result-meta {
@@ -1024,7 +1046,6 @@ export const UIRenderMixin = {
           user-select: none;
         }
 
-        /* Hover mượt mà cho List Item */
         .result-item.playable:hover {
           border-color: rgba(122, 99, 255, 0.6);
           background: rgba(122, 99, 255, 0.12);
@@ -1062,7 +1083,7 @@ export const UIRenderMixin = {
           display: -webkit-box;
           width: 100%;
           max-width: 100%;
-          font-size: 12.5px; /* Giảm font size */
+          font-size: 12.5px;
           font-weight: 700;
           color: #fff;
           overflow: hidden;
@@ -1109,13 +1130,12 @@ export const UIRenderMixin = {
           background: rgba(255, 255, 255, 0.05);
           color: #dbe6ff;
           font-weight: 700;
-          padding: 6px 10px; /* Nhỏ hơn */
+          padding: 6px 10px;
           font-size: 11px;
           cursor: pointer;
           white-space: nowrap;
         }
 
-        /* Hover classes dùng chung */
         .hover-pop:hover {
           transform: translateY(-2px);
           background: rgba(255, 255, 255, 0.12);
@@ -1178,7 +1198,6 @@ export const UIRenderMixin = {
           font-size: 11px;
         }
 
-        /* System Tabs & Other generic components */
         .actions-inline {
           display: flex;
           flex-wrap: wrap;
@@ -1205,7 +1224,7 @@ export const UIRenderMixin = {
 
         .switch {
           position: relative;
-          width: 44px; /* Gọn lại */
+          width: 44px;
           height: 24px;
           display: inline-block;
         }
@@ -1261,7 +1280,6 @@ export const UIRenderMixin = {
           color: #fff;
         }
 
-        /* --- PHẦN CHAT & EQ LƯỢC GIẢN KÍCH THƯỚC TƯƠNG TỰ --- */
         .chat-shell {
           border-radius: 16px;
           border: 1px solid rgba(87, 107, 230, 0.3);
@@ -1276,14 +1294,29 @@ export const UIRenderMixin = {
         .chat-composer-input { min-height: 38px; padding: 8px 12px; font-size: 13px; }
         .chat-send-btn { width: 38px; height: 38px; }
 
-        @media (max-width: 600px) {
-          .top-tabs { grid-template-columns: repeat(2, 1fr); }
-          .subtabs { grid-template-columns: repeat(2, 1fr); }
-          .player-stage { grid-template-columns: 60px minmax(0, 1fr); }
-          .cover-disc { width: 60px; height: 60px; }
-          .icon-btn { width: 38px; height: 38px; }
-          .result-item { grid-template-columns: 44px minmax(0, 1fr) auto; padding: 6px 8px; }
+        /* --- ẨN CHỮ TRÊN MOBILE (< 450px) ĐỂ VỪA VẶN HOÀN HẢO --- */
+        @media (max-width: 450px) {
+          .top-tabs { gap: 6px; padding: 6px; margin: 8px 8px 10px; }
+          .tab-btn { padding: 10px 0; }
+          .tab-btn span { display: none; } /* Ẩn chữ */
+          .tab-btn ha-icon { margin: 0; --mdc-icon-size: 22px; } /* Icon căn giữa */
+          
+          .player-stage { gap: 10px; }
+          .cover-disc { width: 60px; height: 60px; flex: 0 0 60px; border-width: 1px; }
+          .wave-area { height: 60px; }
+          
+          .icon-btn { 
+             height: 36px;
+             flex-basis: 36px;
+             border-radius: 10px; 
+          }
+          .icon-btn ha-icon { --mdc-icon-size: 20px; }
+          
+          .subtabs { grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 8px 8px 4px; }
+          .search-row { padding: 6px 8px; gap: 8px; }
+          .result-item { grid-template-columns: 44px minmax(0, 1fr) auto; padding: 6px 8px; gap: 8px; }
           .thumb, .thumb-wrap { width: 44px; height: 44px; }
+          .result-title { font-size: 12px; }
         }
       </style>
 
