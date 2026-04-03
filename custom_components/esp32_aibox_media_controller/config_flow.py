@@ -1,236 +1,287 @@
-"""Coordinator for ESP32 AIBox integration."""
+"""Config flow for ESP32 AIBox integration."""
 
 from __future__ import annotations
 
-from contextlib import suppress
-from dataclasses import dataclass, field
-from datetime import timedelta
-import logging
 from typing import Any
 
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+import voluptuous as vol
 
-from .api import Esp32AiboxApiClient, Esp32AiboxApiError
-from .const import PROTOCOL_WS_NATIVE
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, OptionsFlow
+from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT
+from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-_LOGGER = logging.getLogger(__name__)
+from .api import ApiMapping, Esp32AiboxApiClient, Esp32AiboxApiConnectionError, Esp32AiboxApiResponseError
+from .const import (
+    CONF_AIBOX_WS_PORT,
+    CONF_ENDPOINT_ADB_CMD,
+    CONF_ENDPOINT_DO_CMD,
+    CONF_ENDPOINT_KEYEVENT,
+    CONF_ENDPOINT_MEDIA_DISPATCH,
+    CONF_PARAM_COMMAND,
+    CONF_PARAM_KEYCODE,
+    CONF_PARAM_MEDIA_KEY,
+    CONF_PROTOCOL,
+    CONF_RESPONSE_CODE_KEY,
+    CONF_RESPONSE_MESSAGE_KEY,
+    CONF_RESPONSE_RESULT_KEY,
+    CONF_RESPONSE_SUCCESS_CODE,
+    CONF_SCAN_INTERVAL,
+    CONF_USE_MEDIA_DISPATCH,
+    DEFAULT_PROTOCOL,
+    DEFAULT_NAME,
+    DEFAULT_AIBOX_WS_PORT,
+    DEFAULT_ENDPOINT_ADB_CMD,
+    DEFAULT_ENDPOINT_DO_CMD,
+    DEFAULT_ENDPOINT_KEYEVENT,
+    DEFAULT_ENDPOINT_MEDIA_DISPATCH,
+    DEFAULT_PARAM_COMMAND,
+    DEFAULT_PARAM_KEYCODE,
+    DEFAULT_PARAM_MEDIA_KEY,
+    DEFAULT_PORT,
+    DEFAULT_RESPONSE_CODE_KEY,
+    DEFAULT_RESPONSE_MESSAGE_KEY,
+    DEFAULT_RESPONSE_RESULT_KEY,
+    DEFAULT_RESPONSE_SUCCESS_CODE,
+    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_TIMEOUT,
+    DOMAIN,
+    PROTOCOL_AUTO,
+    PROTOCOL_HTTP_BRIDGE,
+    PROTOCOL_OPTIONS,
+    PROTOCOL_WS_NATIVE,
+)
 
-_CHAT_BUTTON_ENABLED_STATES = {
-    "ready",
-    "online",
-    "active",
-    "available",
-    "idle",
-    "standby",
-    "connecting",
-    "listening",
-    "thinking",
-    "speaking",
+FORM_DEFAULT_PORT = 8080
+ADVANCED_MAPPING_DEFAULTS: dict[str, str] = {
+    CONF_ENDPOINT_DO_CMD: DEFAULT_ENDPOINT_DO_CMD,
+    CONF_ENDPOINT_ADB_CMD: DEFAULT_ENDPOINT_ADB_CMD,
+    CONF_ENDPOINT_KEYEVENT: DEFAULT_ENDPOINT_KEYEVENT,
+    CONF_ENDPOINT_MEDIA_DISPATCH: DEFAULT_ENDPOINT_MEDIA_DISPATCH,
+    CONF_PARAM_COMMAND: DEFAULT_PARAM_COMMAND,
+    CONF_PARAM_KEYCODE: DEFAULT_PARAM_KEYCODE,
+    CONF_PARAM_MEDIA_KEY: DEFAULT_PARAM_MEDIA_KEY,
+    CONF_RESPONSE_CODE_KEY: DEFAULT_RESPONSE_CODE_KEY,
+    CONF_RESPONSE_MESSAGE_KEY: DEFAULT_RESPONSE_MESSAGE_KEY,
+    CONF_RESPONSE_RESULT_KEY: DEFAULT_RESPONSE_RESULT_KEY,
+    CONF_RESPONSE_SUCCESS_CODE: DEFAULT_RESPONSE_SUCCESS_CODE,
 }
-_CHAT_BUTTON_DISABLED_STATES = {
-    "unavailable",
-    "offline",
-    "error",
-    "failed",
-    "disabled",
-    "disconnected",
-}
 
 
-def _suy_ra_chat_button_enabled(state_value: Any) -> bool | None:
-    """Infer chat button availability from normalized chat state."""
-    if state_value is None:
-        return None
-
-    normalized = str(state_value).strip().lower()
-    if not normalized:
-        return None
-
-    if normalized in _CHAT_BUTTON_ENABLED_STATES:
-        return True
-    if normalized in _CHAT_BUTTON_DISABLED_STATES:
-        return False
-    return None
-
-
-@dataclass(slots=True)
-class Esp32AiboxStatus:
-    """Aggregated speaker status."""
-
-    model: str | None = None
-    playback_state: str | None = None
-    volume_current: int | None = None
-    volume_min: int | None = None
-    volume_max: int | None = None
-    raw: dict[str, Any] = field(default_factory=dict)
-    aibox_playback: dict[str, Any] = field(default_factory=dict)
-    wake_word: dict[str, Any] = field(default_factory=dict)
-    custom_ai: dict[str, Any] = field(default_factory=dict)
-    chat_state: dict[str, Any] = field(default_factory=dict)
-    led_state: dict[str, Any] = field(default_factory=dict)
-    audio_state: dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def volume_level(self) -> float | None:
-        """Volume normalized to 0..1."""
-        if self.volume_current is None or self.volume_min is None or self.volume_max is None:
-            return None
-        spread = self.volume_max - self.volume_min
-        if spread <= 0:
-            return 0.0
-        return max(0.0, min(1.0, (self.volume_current - self.volume_min) / spread))
-
-    @property
-    def is_muted(self) -> bool | None:
-        """Best-effort mute state from volume."""
-        if self.volume_current is None:
-            return None
-        return self.volume_current <= 0
+def _giu_lai_cau_hinh_an(
+    values: dict[str, Any],
+    *fallback_sources: dict[str, Any],
+) -> dict[str, Any]:
+    """Preserve hidden advanced HTTP bridge mapping values when saving config."""
+    saved = dict(values)
+    for key, default_value in ADVANCED_MAPPING_DEFAULTS.items():
+        if key in saved:
+            continue
+        restored = None
+        for source in fallback_sources:
+            if key in source:
+                restored = source[key]
+                break
+        saved[key] = restored if restored is not None else default_value
+    return saved
 
 
-class Esp32AiboxCoordinator(DataUpdateCoordinator[Esp32AiboxStatus]):
-    """Coordinates periodic state updates from API."""
+class CannotConnect(HomeAssistantError):
+    """Error to indicate we cannot connect."""
 
-    def __init__(
-        self,
-        hass: HomeAssistant,
-        client: Esp32AiboxApiClient,
-        scan_interval: timedelta,
-        use_media_dispatch: bool,
-    ) -> None:
-        super().__init__(
-            hass,
-            logger=_LOGGER,
-            name="ESP32 AIBox",
-            update_interval=scan_interval,
+
+class InvalidResponse(HomeAssistantError):
+    """Error to indicate payload is invalid."""
+
+
+async def _xac_thuc_du_lieu_nhap(data: dict[str, Any], hass) -> tuple[str, str, int]:
+    """Validate user input and return (model, resolved_protocol, resolved_port)."""
+    requested_protocol = str(data.get(CONF_PROTOCOL, DEFAULT_PROTOCOL))
+    modes = (
+        [PROTOCOL_HTTP_BRIDGE, PROTOCOL_WS_NATIVE]
+        if requested_protocol == PROTOCOL_AUTO
+        else [requested_protocol]
+    )
+    requested_port = int(data[CONF_PORT])
+    candidate_ports = [requested_port]
+    for fallback_port in (8080, 8081, DEFAULT_PORT):
+        if fallback_port not in candidate_ports:
+            candidate_ports.append(fallback_port)
+
+    last_error: Exception | None = None
+    for port in candidate_ports:
+        for mode in modes:
+            session = async_get_clientsession(hass)
+            client = Esp32AiboxApiClient(
+                session=session,
+                host=data[CONF_HOST],
+                port=port,
+                mapping=ApiMapping.from_config(data),
+                protocol=mode,
+                aibox_ws_port=int(data.get(CONF_AIBOX_WS_PORT, DEFAULT_AIBOX_WS_PORT)),
+                timeout=DEFAULT_TIMEOUT,
+            )
+            try:
+                model = await client.async_get_model()
+            except (Esp32AiboxApiConnectionError, Esp32AiboxApiResponseError) as err:
+                last_error = err
+                continue
+
+            if model:
+                return model, mode, port
+
+    if isinstance(last_error, Esp32AiboxApiConnectionError):
+        raise CannotConnect from last_error
+    raise InvalidResponse from last_error
+
+
+class Esp32AiboxConfigFlow(ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for ESP32 AIBox."""
+
+    VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> "Esp32AiboxOptionsFlow":
+        """Return options flow handler."""
+        return Esp32AiboxOptionsFlow(config_entry)
+
+    async def async_step_user(self, user_input: dict[str, Any] | None = None):
+        """Handle the initial step."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                _model, resolved_protocol, resolved_port = await _xac_thuc_du_lieu_nhap(user_input, self.hass)
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidResponse:
+                errors["base"] = "invalid_response"
+            except Exception:  # noqa: BLE001
+                errors["base"] = "unknown"
+            else:
+                entry_data = _giu_lai_cau_hinh_an(user_input)
+                entry_data[CONF_PROTOCOL] = resolved_protocol
+                entry_data[CONF_PORT] = resolved_port
+                unique_id = f"{entry_data[CONF_HOST]}:{int(entry_data[CONF_PORT])}"
+                await self.async_set_unique_id(unique_id)
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(
+                    title=entry_data[CONF_NAME],
+                    data=entry_data,
+                )
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=self._tao_luoc_do(user_input),
+            errors=errors,
         )
-        self.client = client
-        self._use_media_dispatch = use_media_dispatch
 
-    async def _async_update_data(self) -> Esp32AiboxStatus:
-        """Fetch state from device."""
-        try:
-            snapshot = await self.client.async_get_status_snapshot()
-        except Esp32AiboxApiError as err:
-            raise UpdateFailed(str(err)) from err
-
-        model = snapshot.get("model")
-        playback_state = snapshot.get("playback_state")
-        if not self._use_media_dispatch and self.client.protocol != PROTOCOL_WS_NATIVE:
-            playback_state = None
-
-        status = Esp32AiboxStatus(
-            model=model or None,
-            playback_state=playback_state,
-            raw=dict(snapshot.get("raw") or {}),
+    @staticmethod
+    def _tao_luoc_do(defaults: dict[str, Any] | None = None) -> vol.Schema:
+        """Build the end-user config schema."""
+        values = defaults or {}
+        return vol.Schema(
+            {
+                vol.Required(CONF_NAME, default=values.get(CONF_NAME, DEFAULT_NAME)): str,
+                vol.Required(CONF_HOST, default=values.get(CONF_HOST, "")): str,
+                vol.Required(
+                    CONF_PORT,
+                    default=int(values.get(CONF_PORT, FORM_DEFAULT_PORT)),
+                ): vol.Coerce(int),
+                vol.Required(
+                    CONF_AIBOX_WS_PORT,
+                    default=int(values.get(CONF_AIBOX_WS_PORT, DEFAULT_AIBOX_WS_PORT)),
+                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
+                vol.Required(
+                    CONF_SCAN_INTERVAL,
+                    default=int(values.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)),
+                ): vol.All(vol.Coerce(int), vol.Range(min=5, max=300)),
+                vol.Required(
+                    CONF_USE_MEDIA_DISPATCH,
+                    default=bool(values.get(CONF_USE_MEDIA_DISPATCH, True)),
+                ): bool,
+                vol.Required(
+                    CONF_PROTOCOL,
+                    default=values.get(CONF_PROTOCOL, DEFAULT_PROTOCOL),
+                ): vol.In(PROTOCOL_OPTIONS),
+            }
         )
-        status.raw["model"] = model
-        status.raw["playback_state"] = playback_state
-        status.volume_current = snapshot.get("volume_current")
-        status.volume_min = snapshot.get("volume_min")
-        status.volume_max = snapshot.get("volume_max")
 
-        with suppress(Esp32AiboxApiError, Exception):
-            audio_resp = await self.client.async_get_eq_config()
-            if audio_resp:
-                status.audio_state = audio_resp
-                if "music_light_mode" in audio_resp and "music_light_mode" not in status.raw:
-                    status.raw["music_light_mode"] = audio_resp.get("music_light_mode")
 
-        with suppress(Esp32AiboxApiError, Exception):
-            aibox_pb = await self.client.async_aibox_get_playback_state()
-            if aibox_pb:
-                status.aibox_playback = aibox_pb
-                aibox_playing = self.client._aibox_phan_tich_co_dang_phat(
-                    aibox_pb.get("is_playing", aibox_pb.get("play_state", aibox_pb.get("state")))
+class Esp32AiboxOptionsFlow(OptionsFlow):
+    """Handle options flow for existing entry."""
+
+    def __init__(self, config_entry: ConfigEntry) -> None:
+        self._config_entry = config_entry
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None):
+        """Manage options."""
+        if user_input is not None:
+            # Re-validate in case host/port changed.
+            merged = {
+                **self._config_entry.data,
+                **self._config_entry.options,
+                **user_input,
+            }
+            errors: dict[str, str] = {}
+            try:
+                _model, resolved_protocol, resolved_port = await _xac_thuc_du_lieu_nhap(merged, self.hass)
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidResponse:
+                errors["base"] = "invalid_response"
+            except Exception:  # noqa: BLE001
+                errors["base"] = "unknown"
+            else:
+                option_data = _giu_lai_cau_hinh_an(
+                    user_input,
+                    self._config_entry.options,
+                    self._config_entry.data,
                 )
-                if aibox_playing is True:
-                    status.playback_state = "playing"
-                    status.raw["playback_state"] = "playing"
-                elif aibox_playing is False:
-                    if status.playback_state != "playing":
-                        status.playback_state = "paused"
-                        status.raw["playback_state"] = "paused"
+                option_data[CONF_PROTOCOL] = resolved_protocol
+                option_data[CONF_PORT] = resolved_port
+                return self.async_create_entry(title="", data=option_data)
+            return self.async_show_form(
+                step_id="init",
+                data_schema=self._tao_luoc_do(user_input),
+                errors=errors,
+            )
 
-        with suppress(Esp32AiboxApiError, Exception):
-            wake_resp = await self.client.async_wake_word_get_enabled()
-            if wake_resp and ("enabled" in wake_resp or "enable" in wake_resp or "state" in wake_resp):
-                enabled_val = wake_resp.get("enabled", wake_resp.get("enable", wake_resp.get("state")))
-                parsed = self.client._aibox_phan_tich_bool(enabled_val)
-                if parsed is not None:
-                    status.wake_word["enabled"] = parsed
-            sens_resp = await self.client.async_wake_word_get_sensitivity()
-            if sens_resp and ("sensitivity" in sens_resp or "value" in sens_resp):
-                status.wake_word["sensitivity"] = float(
-                    sens_resp.get("sensitivity", sens_resp.get("value", 0.9))
-                )
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self._tao_luoc_do(),
+        )
 
-        with suppress(Esp32AiboxApiError, Exception):
-            ai_resp = await self.client.async_custom_ai_get_enabled()
-            if ai_resp and ("enabled" in ai_resp or "enable" in ai_resp or "state" in ai_resp):
-                enabled_val = ai_resp.get("enabled", ai_resp.get("enable", ai_resp.get("state")))
-                parsed = self.client._aibox_phan_tich_bool(enabled_val)
-                if parsed is not None:
-                    status.custom_ai["enabled"] = parsed
+    def _tao_luoc_do(self, user_input: dict[str, Any] | None = None) -> vol.Schema:
+        """Build the end-user options schema."""
+        defaults = {**self._config_entry.data, **self._config_entry.options}
+        if user_input:
+            defaults.update(user_input)
 
-        with suppress(Esp32AiboxApiError, Exception):
-            chat_resp = await self.client.async_chat_get_state()
-            if chat_resp:
-                state_value = chat_resp.get(
-                    "state",
-                    chat_resp.get("chat_state", chat_resp.get("status")),
-                )
-                if state_value is None:
-                    if any(
-                        key in chat_resp
-                        for key in ("button_text", "buttonText", "button_enabled", "buttonEnabled")
-                    ):
-                        state_value = "ready"
-                    elif "success" in chat_resp:
-                        parsed_success = self.client._aibox_phan_tich_bool(chat_resp.get("success"))
-                        if parsed_success is not None:
-                            state_value = "ready" if parsed_success else "unavailable"
-
-                if state_value is not None:
-                    state_text = str(state_value).strip()
-                    if state_text:
-                        status.chat_state["state"] = state_text
-
-                if "button_text" in chat_resp or "buttonText" in chat_resp or "text" in chat_resp:
-                    button_text = chat_resp.get(
-                        "button_text",
-                        chat_resp.get("buttonText", chat_resp.get("text")),
-                    )
-                    status.chat_state["button_text"] = "" if button_text is None else str(button_text)
-
-                parsed_enabled = None
-                if (
-                    "button_enabled" in chat_resp
-                    or "buttonEnabled" in chat_resp
-                    or "enabled" in chat_resp
-                ):
-                    parsed_enabled = self.client._aibox_phan_tich_bool(
-                        chat_resp.get(
-                            "button_enabled",
-                            chat_resp.get("buttonEnabled", chat_resp.get("enabled")),
-                        )
-                    )
-                    if parsed_enabled is not None:
-                        status.chat_state["button_enabled"] = parsed_enabled
-
-                if parsed_enabled is None:
-                    inferred_enabled = _suy_ra_chat_button_enabled(status.chat_state.get("state"))
-                    if inferred_enabled is not None:
-                        status.chat_state["button_enabled"] = inferred_enabled
-
-                resp_type = chat_resp.get("type")
-                if resp_type is not None:
-                    status.chat_state["last_response_type"] = str(resp_type)
-
-        with suppress(Esp32AiboxApiError, Exception):
-            led_resp = await self.client.async_led_get_state()
-            if led_resp:
-                status.led_state = led_resp
-
-        return status
+        return vol.Schema(
+            {
+                vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, DEFAULT_NAME)): str,
+                vol.Required(CONF_HOST, default=defaults.get(CONF_HOST, "")): str,
+                vol.Required(
+                    CONF_PORT,
+                    default=int(defaults.get(CONF_PORT, FORM_DEFAULT_PORT)),
+                ): vol.Coerce(int),
+                vol.Required(
+                    CONF_AIBOX_WS_PORT,
+                    default=int(defaults.get(CONF_AIBOX_WS_PORT, DEFAULT_AIBOX_WS_PORT)),
+                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
+                vol.Required(
+                    CONF_SCAN_INTERVAL,
+                    default=int(defaults.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)),
+                ): vol.All(vol.Coerce(int), vol.Range(min=5, max=300)),
+                vol.Required(
+                    CONF_USE_MEDIA_DISPATCH,
+                    default=bool(defaults.get(CONF_USE_MEDIA_DISPATCH, True)),
+                ): bool,
+                vol.Required(
+                    CONF_PROTOCOL,
+                    default=defaults.get(CONF_PROTOCOL, DEFAULT_PROTOCOL),
+                ): vol.In(PROTOCOL_OPTIONS),
+            }
+        )
