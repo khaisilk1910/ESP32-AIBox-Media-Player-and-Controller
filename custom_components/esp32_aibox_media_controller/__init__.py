@@ -108,7 +108,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: Esp32AiboxConfigEntry) -
         get_file_version, "esp32-aibox-controller.js", fallback_version
     )
 
-    await init_resource(hass, f"{UI_URL_BASE}/esp32-aibox-controller.js", ver_card)
+    await init_resource(hass, f"{UI_URL_BASE}/esp32_aibox_ui.js", ver_card)
     # ---------------------------------------------------------
 
     merged = {**entry.data, **entry.options}
