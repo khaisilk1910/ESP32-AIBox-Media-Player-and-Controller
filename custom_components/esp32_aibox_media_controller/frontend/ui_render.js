@@ -313,10 +313,13 @@ export const UIRenderMixin = {
 
     const aiboxEntities = this._timCacEntityAibox();
 
+    // --- BẮT ĐẦU SỬA ĐỔI: Tự động update và reset logic khi bị xóa / đổi tên ID ---
     if (aiboxEntities.length > 0 && (!this._config || !this._config.entity || !aiboxEntities.includes(this._config.entity))) {
-      if (!this._config) this._config = {};
-      this._config.entity = aiboxEntities[0];
+      // Thay vì gán trực tiếp, sử dụng _chuyenEntity để gọi reset toàn bộ các State về thiết bị mới
+      this._chuyenEntity(aiboxEntities[0]);
+      return; // Return để ngăn chạy tiếp khối mã bên dưới, _chuyenEntity sẽ tự gọi lại _veGiaoDien() một lần nữa với context hoàn toàn sạch sẽ.
     }
+    // --- KẾT THÚC SỬA ĐỔI ---
 
     if (!this._config || !this._config.entity) {
       this._xoaHenGioTienDo();
@@ -327,9 +330,10 @@ export const UIRenderMixin = {
     const stateObj = this._doiTuongTrangThai();
     if (!stateObj) {
       this._xoaHenGioTienDo();
+      // Cập nhật text thông báo dễ hiểu hơn khi thiết bị chưa kết nối hoặc đã bị xóa hẳn.
       this.shadowRoot.innerHTML = `
         <ha-card>
-          <div style="padding:16px;">Không tìm thấy entity <strong>${this._maHoaHtml(this._config.entity)}</strong>. Đang đợi đồng bộ...</div>
+          <div style="padding:16px;">Không tìm thấy entity <strong>${this._maHoaHtml(this._config.entity)}</strong>. Có thể thiết bị đã bị xóa, đổi tên hoặc mất kết nối. Đang đợi đồng bộ...</div>
         </ha-card>
       `;
       return;
