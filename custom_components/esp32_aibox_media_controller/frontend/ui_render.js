@@ -490,9 +490,20 @@ export const UIRenderMixin = {
 
   _veGiaoDien() {
     if (!this.shadowRoot) return;
-    if (!this._config) {
+    if (!this._hass) return;
+
+    // --- TÍNH NĂNG MỚI: Quét các Entity ESP32 AIBox ---
+    const aiboxEntities = this._timCacEntityAibox();
+
+    // Nếu thẻ chưa được set cấu hình entity, hoặc entity đã lưu không tồn tại thì tự nhận entity đầu tiên tìm được
+    if (aiboxEntities.length > 0 && (!this._config || !this._config.entity || !aiboxEntities.includes(this._config.entity))) {
+      if (!this._config) this._config = {};
+      this._config.entity = aiboxEntities[0];
+    }
+
+    if (!this._config || !this._config.entity) {
       this._xoaHenGioTienDo();
-      this.shadowRoot.innerHTML = `<ha-card><div style="padding:16px;">Thẻ ESP32 AIBox đang thiếu cấu hình.</div></ha-card>`;
+      this.shadowRoot.innerHTML = `<ha-card><div style="padding:16px;">Không tìm thấy entity ESP32 AIBox nào trong hệ thống. Hãy chắc chắn bạn đã setup kết nối trong mục Integrations.</div></ha-card>`;
       return;
     }
 
@@ -501,11 +512,27 @@ export const UIRenderMixin = {
       this._xoaHenGioTienDo();
       this.shadowRoot.innerHTML = `
         <ha-card>
-          <div style="padding:16px;">Không tìm thấy entity <strong>${this._maHoaHtml(this._config.entity)}</strong>.</div>
+          <div style="padding:16px;">Không tìm thấy entity <strong>${this._maHoaHtml(this._config.entity)}</strong>. Đang đợi đồng bộ...</div>
         </ha-card>
       `;
       return;
     }
+
+    // --- TÍNH NĂNG MỚI: HTML của thanh chọn thiết bị ---
+    const deviceTabsHtml = aiboxEntities.length > 1 ? `
+      <div class="device-tabs-container">
+        ${aiboxEntities.map(ent => {
+          const friendlyName = this._hass.states[ent]?.attributes?.friendly_name || ent.replace("media_player.", "");
+          const isActive = this._config.entity === ent;
+          return `
+            <button class="device-tab-btn ${isActive ? 'active' : ''} hover-pop" data-entity="${ent}" title="${ent}">
+              <ha-icon icon="mdi:speaker-wireless"></ha-icon>
+              <span>${this._maHoaHtml(friendlyName)}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    ` : '';
 
     const tabs = [
       { key: "media", icon: "mdi:music-note", label: "Media" },
@@ -559,6 +586,42 @@ export const UIRenderMixin = {
           color: var(--text);
           box-shadow: 0 16px 32px rgba(0, 0, 0, 0.3);
           padding: 0;
+        }
+
+        /* --- CSS CHO THẺ THIẾT BỊ (AUTO-SCAN) --- */
+        .device-tabs-container {
+          display: flex;
+          gap: 8px;
+          padding: 12px 10px 0;
+          overflow-x: auto;
+          scrollbar-width: none; /* Firefox */
+        }
+        .device-tabs-container::-webkit-scrollbar {
+          display: none; /* Safari and Chrome */
+        }
+        .device-tab-btn {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 14px;
+          border-radius: 12px;
+          border: 1px solid rgba(101, 125, 255, 0.35);
+          background: rgba(10, 22, 48, 0.75);
+          color: var(--muted);
+          cursor: pointer;
+          white-space: nowrap;
+          font-weight: 700;
+          font-size: 13px;
+          flex-shrink: 0;
+        }
+        .device-tab-btn.active {
+          background: linear-gradient(120deg, #6466f1, #8b5cf6);
+          color: #fff;
+          box-shadow: 0 4px 12px rgba(122, 99, 255, 0.3);
+          border-color: transparent;
+        }
+        .device-tab-btn ha-icon {
+          --mdc-icon-size: 18px;
         }
 
         /* --- SỬA LỖI RESPONSIVE CHO TOP TABS: Tự co giãn & Ẩn chữ trên Mobile --- */
@@ -1321,6 +1384,7 @@ export const UIRenderMixin = {
       </style>
 
       <ha-card>
+        ${deviceTabsHtml}
         <div class="top-tabs">
           ${tabs
             .map(

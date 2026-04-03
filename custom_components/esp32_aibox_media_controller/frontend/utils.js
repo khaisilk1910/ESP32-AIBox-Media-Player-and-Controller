@@ -8,6 +8,49 @@ export const UtilsMixin = {
     return this._doiTuongTrangThai()?.attributes || {};
   },
 
+  // --- TÍNH NĂNG MỚI: Tự động quét và tìm các AIBox Entities ---
+  _timCacEntityAibox() {
+    if (!this._hass) return [];
+    return Object.keys(this._hass.states).filter(entityId => {
+      if (!entityId.startsWith("media_player.")) return false;
+      const attrs = this._hass.states[entityId].attributes;
+      // Nhận diện qua các thuộc tính đặc trưng do integration đẩy lên
+      return attrs && ("aibox_playback" in attrs || "chat_state" in attrs || "wake_word" in attrs || "audio_config" in attrs);
+    }).sort(); // Sắp xếp theo tên để tab luôn cố định vị trí
+  },
+
+  // --- TÍNH NĂNG MỚI: Xử lý chuyển đổi Entity và dọn dẹp rác ---
+  _chuyenEntity(newEntityId) {
+    if (!this._config) this._config = {};
+    if (this._config.entity === newEntityId) return;
+    
+    this._config.entity = newEntityId;
+
+    // Reset toàn bộ state nội bộ để tránh dính dữ liệu từ loa cũ sang loa mới
+    this._lastEntityRef = null;
+    this._pendingRender = false;
+    this._xoaHenGioTienDo();
+    this._liveTrackKey = "";
+    this._livePositionSeconds = 0;
+    this._liveDurationSeconds = 0;
+    this._livePlaying = false;
+    this._nowPlayingCache = { trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0 };
+    this._chatHistory = [];
+    this._chatHistoryLoaded = false;
+    this._forcePauseUntil = 0;
+    this._optimisticPlayUntil = 0;
+    this._pendingSwitches = {};
+    this._lastChatStateRequestAt = 0;
+    this._lastChatHistoryRequestAt = 0;
+    this._lastControlStateRequestAt = 0;
+    this._lastSystemStateRequestAt = 0;
+    this._dangChoKetQuaTimKiem = false;
+    this._timKiemDangCho = null;
+
+    this._dongBoTuEntity(); // Lấy dữ liệu entity mới ngay lập tức
+    this._veGiaoDien(); // Vẽ lại toàn bộ thẻ
+  },
+
   _dangFocusTimKiem() {
     const active = this.shadowRoot?.activeElement;
     return this._mediaQueryFocused || active?.id === "media-query";

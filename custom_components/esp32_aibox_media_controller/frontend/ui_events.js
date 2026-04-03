@@ -3,6 +3,16 @@ export const UIEventsMixin = {
     const root = this.shadowRoot;
     if (!root) return;
 
+    // --- TÍNH NĂNG MỚI: Event listener cho các tab thiết bị ---
+    root.querySelectorAll(".device-tab-btn").forEach((el) => {
+      el.addEventListener("click", () => {
+        const entityId = el.dataset.entity;
+        if (entityId) {
+          this._chuyenEntity(entityId);
+        }
+      });
+    });
+
     root.querySelectorAll("[data-tab]").forEach((el) => {
       el.addEventListener("click", () => {
         this._activeTab = el.dataset.tab || "media";
