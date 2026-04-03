@@ -4,12 +4,13 @@
   "version": "2026.04.03",
   "integration_type": "device",
   "documentation": "https://github.com/khaisilk1910/ESP32-AIBox-Media-Player-and-Controller",
+  "issue_tracker": "https://github.com/khaisilk1910/ESP32-AIBox-Media-Player-and-Controller/issues",
   "config_flow": true,
   "requirements": [],
   "dependencies": [
     "lovelace",
     "frontend"
   ],
-  "codeowners": [],
+  "codeowners": ["@khaisilk1910"],
   "iot_class": "local_polling"
 }
