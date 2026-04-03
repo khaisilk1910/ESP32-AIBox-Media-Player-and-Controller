@@ -3,6 +3,7 @@ import { UtilsMixin } from './utils.js';
 import { CoreLogicMixin } from './core_logic.js';
 import { UIRenderMixin } from './ui_render.js';
 import { UIEventsMixin } from './ui_events.js';
+import './esp32_aibox_editor.js'; // Nhúng Editor
 
 class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
   constructor() {
@@ -28,7 +29,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._mediaQueryFocused = false;
 
     this._volumeLevel = 0;
-    this._preMuteVolumeLevel = null; // Biến lưu volume trước khi mute
+    this._preMuteVolumeLevel = null;
     this._wakeSensitivity = 0.9;
     this._lastPlayPauseSent = null;
 
@@ -87,9 +88,22 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._timKiemDangCho = null;
   }
 
-  static getStubConfig() {
+  static getConfigElement() {
+    return document.createElement("esp32-aibox-media-controller-editor");
+  }
+
+  static getStubConfig(hass) {
+    let entity = "media_player.esp32_aibox_media_controller";
+    if (hass && hass.states) {
+      const entities = Object.keys(hass.states).filter(eid => {
+        if (!eid.startsWith("media_player.")) return false;
+        const attrs = hass.states[eid].attributes;
+        return attrs && ("aibox_playback" in attrs || "chat_state" in attrs || "wake_word" in attrs || "audio_config" in attrs);
+      });
+      if (entities.length > 0) entity = entities[0];
+    }
     return {
-      entity: "media_player.esp32_aibox_media_controller",
+      entity: entity,
       title: "ESP32 AIBox",
     };
   }
@@ -113,7 +127,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._repeatMode = "all"; 
     this._waveEffect = 0;
 
-    this._preMuteVolumeLevel = null; // Đặt lại biến
+    this._preMuteVolumeLevel = null;
     this._liveTrackKey = "";
     this._livePositionSeconds = 0;
     this._ignorePositionUntil = 0;

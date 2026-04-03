@@ -1,6 +1,40 @@
 import { CHAT_ENABLED_STATES, CHAT_DISABLED_STATES, EQ_BAND_LABELS } from './constants.js';
 
 export const UIRenderMixin = {
+  _hexToRgba(hex, opacity) {
+    let c;
+    if(/^#([A-Fa-f0-9]{3}){1,2}$/.test(hex)){
+      c= hex.substring(1).split('');
+      if(c.length === 3) c= [c[0], c[0], c[1], c[1], c[2], c[2]];
+      c= '0x'+c.join('');
+      return 'rgba('+[(c>>16)&255, (c>>8)&255, c&255].join(',')+','+(opacity/100)+')';
+    }
+    return hex;
+  },
+
+  _applyOpacityToGradientStr(str, opacity) {
+    return str.replace(/#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})\b/gi, (match) => this._hexToRgba(match, opacity));
+  },
+
+  _getAverageColor(str) {
+    const hexRegex = /#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})\b/gi;
+    let match;
+    let colors = [];
+    while ((match = hexRegex.exec(str)) !== null) {
+      let hex = match[1];
+      if (hex.length === 3) hex = hex.split('').map(x => x+x).join('');
+      colors.push({ r: parseInt(hex.substring(0,2), 16), g: parseInt(hex.substring(2,4), 16), b: parseInt(hex.substring(4,6), 16) });
+    }
+    const rgbRegex = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/gi;
+    while ((match = rgbRegex.exec(str)) !== null) {
+      colors.push({ r: parseInt(match[1], 10), g: parseInt(match[2], 10), b: parseInt(match[3], 10) });
+    }
+    if (colors.length === 0) return { r: 7, g: 20, b: 48 };
+    let r = 0, g = 0, b = 0;
+    colors.forEach(c => { r += c.r; g += c.g; b += c.b; });
+    return { r: Math.round(r / colors.length), g: Math.round(g / colors.length), b: Math.round(b / colors.length) };
+  },
+
   _veCotSong() {
     const seeds = [18, 36, 14, 48, 26, 40, 22, 52, 30, 44, 20, 38, 50, 10, 25, 45, 15, 35, 42, 28, 55, 32];
     return Array.from({ length: 50 }, (_, idx) => {
@@ -35,11 +69,9 @@ export const UIRenderMixin = {
 
     const volIcon = volumePercent === 0 ? "mdi:volume-mute" : (volumePercent < 40 ? "mdi:volume-low" : (volumePercent < 80 ? "mdi:volume-medium" : "mdi:volume-high"));
 
-    // Lấy tiêu đề và ID bài đang phát (chuẩn hóa chữ thường để so sánh)
     const playingTitleLower = String(playback.title || "").trim().toLowerCase();
     const playingId = String(playback.track_id || "").trim();
     
-    // Biến cờ để đảm bảo chỉ highlight duy nhất 1 bài trong danh sách
     let hasHighlightedCurrent = false;
 
     return `
@@ -142,11 +174,9 @@ export const UIRenderMixin = {
             const itemTitle = item.title || `Bản nhạc ${idx + 1}`;
             const itemArtist = item.artist || item.channel || "Chưa rõ nghệ sĩ";
             
-            // So sánh chéo cả ID và Title để đảm bảo đánh dấu đúng bài đang phát
             const currentItemTitleLower = String(itemTitle).trim().toLowerCase();
             let isPlayingItem = false;
             
-            // Kiểm tra xem đã có bài nào được highlight chưa
             if (!hasHighlightedCurrent) {
               if (playingId && safeItemId && playingId === safeItemId) {
                 isPlayingItem = true;
@@ -207,7 +237,7 @@ export const UIRenderMixin = {
   },
 
   _veTabChat() { 
-    const historyMarkup = this._chatHistory.length === 0 ? `<div class="chat-empty"><strong>Chưa có lịch sử chat</strong></div>` : this._chatHistory.map(item => `<div class="chat-row ${["user", "human", "client"].includes(String(item.message_type || item.role).toLowerCase()) ? "user" : "server"}"><div class="chat-item ${["user", "human", "client"].includes(String(item.message_type || item.role).toLowerCase()) ? "user" : "server"} hover-lift"><div class="chat-head">${["user", "human", "client"].includes(String(item.message_type || item.role).toLowerCase()) ? "Bạn" : "AI"}</div><div class="chat-content">${this._maHoaHtml(item.content || item.message || "")}</div></div></div>`).join("");
+    const historyMarkup = this._chatHistory.length === 0 ? `<div class="chat-empty empty"><strong>Chưa có lịch sử chat</strong></div>` : this._chatHistory.map(item => `<div class="chat-row ${["user", "human", "client"].includes(String(item.message_type || item.role).toLowerCase()) ? "user" : "server"}"><div class="chat-item ${["user", "human", "client"].includes(String(item.message_type || item.role).toLowerCase()) ? "user" : "server"} hover-lift"><div class="chat-head">${["user", "human", "client"].includes(String(item.message_type || item.role).toLowerCase()) ? "Bạn" : "AI"}</div><div class="chat-content">${this._maHoaHtml(item.content || item.message || "")}</div></div></div>`).join("");
     return `
       <section class="panel panel-chat">
         <div class="chat-shell">
@@ -313,13 +343,10 @@ export const UIRenderMixin = {
 
     const aiboxEntities = this._timCacEntityAibox();
 
-    // --- BẮT ĐẦU SỬA ĐỔI: Tự động update và reset logic khi bị xóa / đổi tên ID ---
     if (aiboxEntities.length > 0 && (!this._config || !this._config.entity || !aiboxEntities.includes(this._config.entity))) {
-      // Thay vì gán trực tiếp, sử dụng _chuyenEntity để gọi reset toàn bộ các State về thiết bị mới
       this._chuyenEntity(aiboxEntities[0]);
-      return; // Return để ngăn chạy tiếp khối mã bên dưới, _chuyenEntity sẽ tự gọi lại _veGiaoDien() một lần nữa với context hoàn toàn sạch sẽ.
+      return; 
     }
-    // --- KẾT THÚC SỬA ĐỔI ---
 
     if (!this._config || !this._config.entity) {
       this._xoaHenGioTienDo();
@@ -330,13 +357,92 @@ export const UIRenderMixin = {
     const stateObj = this._doiTuongTrangThai();
     if (!stateObj) {
       this._xoaHenGioTienDo();
-      // Cập nhật text thông báo dễ hiểu hơn khi thiết bị chưa kết nối hoặc đã bị xóa hẳn.
       this.shadowRoot.innerHTML = `
         <ha-card>
           <div style="padding:16px;">Không tìm thấy entity <strong>${this._maHoaHtml(this._config.entity)}</strong>. Có thể thiết bị đã bị xóa, đổi tên hoặc mất kết nối. Đang đợi đồng bộ...</div>
         </ha-card>
       `;
       return;
+    }
+
+    // -- TÍNH TOÁN STYLES --
+    const conf = this._config || {};
+    let bgStr = '';
+    let stringForContrastCalc = '';
+    const bgType = conf.bg_type || 'default'; 
+    const bgOpacity = conf.bg_opacity !== undefined ? conf.bg_opacity : 100;
+
+    if (bgType === 'gradient') {
+      const preset = conf.bg_gradient_preset || 'linear-gradient(135deg, #1e293b, #0f172a)';
+      if (preset === 'custom') {
+         bgStr = `linear-gradient(${conf.bg_gradient_angle || 135}deg, ${this._hexToRgba(conf.bg_gradient_color1 || '#1e293b', bgOpacity)}, ${this._hexToRgba(conf.bg_gradient_color2 || '#0f172a', bgOpacity)})`;
+         stringForContrastCalc = `${conf.bg_gradient_color1} ${conf.bg_gradient_color2}`;
+      } else {
+         bgStr = this._applyOpacityToGradientStr(preset, bgOpacity);
+         stringForContrastCalc = preset;
+      }
+    } else if (bgType === 'solid') {
+      bgStr = this._hexToRgba(conf.bg_color || '#071430', bgOpacity);
+      stringForContrastCalc = conf.bg_color || '#071430';
+    } else {
+      bgStr = `radial-gradient(1400px 400px at 0% -20%, rgba(84, 81, 255, 0.18), transparent 52%), radial-gradient(1000px 380px at 100% -10%, rgba(66, 167, 255, 0.16), transparent 58%), linear-gradient(180deg, #040b1d 0%, #071430 100%)`;
+      stringForContrastCalc = '#071430';
+    }
+
+    // Border
+    const borderEnabled = conf.border_enable !== undefined ? conf.border_enable : false;
+    let borderStr = '1px solid rgba(255, 255, 255, 0.06)';
+    if (borderEnabled) {
+      borderStr = `${conf.border_width || 1}px solid ${this._hexToRgba(conf.border_color || '#ffffff', conf.border_opacity !== undefined ? conf.border_opacity : 100)}`;
+    } else if (bgType !== 'default') {
+      borderStr = 'none';
+    }
+
+    // Shadow
+    const shadowEnabled = conf.shadow_enable !== undefined ? conf.shadow_enable : false;
+    let shadowStr = '0 16px 32px rgba(0, 0, 0, 0.3)';
+    if (shadowEnabled) {
+      shadowStr = `${conf.shadow_offset_x || 0}px ${conf.shadow_offset_y || 8}px ${conf.shadow_blur || 20}px ${this._hexToRgba(conf.shadow_color || '#000000', conf.shadow_opacity !== undefined ? conf.shadow_opacity : 30)}`;
+    } else if (bgType !== 'default') {
+      shadowStr = 'none';
+    }
+
+    // Auto Contrast & Colors
+    const autoContrast = conf.auto_contrast !== undefined ? conf.auto_contrast : true;
+    let c_text = conf.textColor || '#f2f5ff';
+    let c_muted = conf.mutedColor || '#a7b5d4';
+    let c_tile_bg = conf.tileBg || 'rgba(255, 255, 255, 0.02)';
+    let c_line = conf.lineColor || 'rgba(70, 106, 233, 0.25)';
+    let c_card_bg_var = '#071430';
+    let c_accent = '#7a63ff';
+    let c_input_bg = 'rgba(11, 24, 54, 0.6)';
+
+    if (autoContrast && bgType !== 'default') {
+       const avgColor = this._getAverageColor(stringForContrastCalc);
+       const op = bgOpacity / 100;
+       const baseBg = 30; 
+       const effR = Math.round(avgColor.r * op + baseBg * (1 - op));
+       const effG = Math.round(avgColor.g * op + baseBg * (1 - op));
+       const effB = Math.round(avgColor.b * op + baseBg * (1 - op));
+       const yiq = ((effR * 299) + (effG * 587) + (effB * 114)) / 1000;
+       
+       if (yiq >= 135) { // Light background
+           c_text = '#111827';
+           c_muted = '#4b5563';
+           c_tile_bg = 'rgba(0, 0, 0, 0.04)';
+           c_line = 'rgba(0, 0, 0, 0.12)';
+           c_card_bg_var = '#ffffff';
+           c_accent = '#4f46e5';
+           c_input_bg = 'rgba(0, 0, 0, 0.05)';
+       } else { // Dark background
+           c_text = '#f9fafb';
+           c_muted = '#9ca3af';
+           c_tile_bg = 'rgba(255, 255, 255, 0.04)';
+           c_line = 'rgba(255, 255, 255, 0.15)';
+           c_card_bg_var = '#0f172a';
+           c_accent = '#818cf8';
+           c_input_bg = 'rgba(0, 0, 0, 0.2)';
+       }
     }
 
     const deviceSelectorHtml = aiboxEntities.length > 1 ? `
@@ -372,9 +478,14 @@ export const UIRenderMixin = {
     this.shadowRoot.innerHTML = `
       <style>
         :host {
-          --bg-card: #071430; --bg-soft: #0d2048; --bg-tile: #14274c;
-          --line: #29418f; --text: #f2f5ff; --muted: #a7b5d4;
-          --accent: #7a63ff; --accent-2: #4f8dff; --danger: #ef4444;
+          --bg-card: ${c_card_bg_var}; 
+          --bg-soft: ${c_tile_bg}; 
+          --bg-tile: ${c_tile_bg};
+          --line: ${c_line}; 
+          --text: ${c_text}; 
+          --muted: ${c_muted};
+          --accent: ${c_accent}; 
+          --input-bg: ${c_input_bg};
           display: block; width: 100%; max-width: none;
         }
 
@@ -384,25 +495,28 @@ export const UIRenderMixin = {
         }
 
         ha-card {
-          width: 100%; max-width: none; margin: 0; border-radius: 24px; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.06);
-          background: radial-gradient(1400px 400px at 0% -20%, rgba(84, 81, 255, 0.18), transparent 52%), radial-gradient(1000px 380px at 100% -10%, rgba(66, 167, 255, 0.16), transparent 58%), linear-gradient(180deg, #040b1d 0%, var(--bg-card) 100%);
-          color: var(--text); box-shadow: 0 16px 32px rgba(0, 0, 0, 0.3); padding: 0;
+          width: 100%; max-width: none; margin: 0; border-radius: 24px; overflow: hidden; 
+          border: ${borderStr};
+          background: ${bgStr};
+          color: var(--text); 
+          box-shadow: ${shadowStr}; 
+          padding: 0;
         }
 
         .device-selector-container { display: flex; align-items: center; gap: 8px; padding: 12px 10px 0; width: 100%; }
-        .device-nav-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; border: 1px solid rgba(101, 125, 255, 0.35); background: rgba(10, 22, 48, 0.75); color: var(--muted); cursor: pointer; flex-shrink: 0; transition: all 0.2s ease; }
-        .device-nav-btn:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+        .device-nav-btn { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg-tile); color: var(--muted); cursor: pointer; flex-shrink: 0; transition: all 0.2s ease; }
+        .device-nav-btn:hover { background: var(--line); color: var(--text); }
         .device-nav-btn:active { transform: scale(0.95); }
-        .device-select-wrapper { position: relative; flex: 1; display: flex; align-items: center; background: linear-gradient(120deg, rgba(100, 102, 241, 0.15), rgba(139, 92, 246, 0.15)); border: 1px solid rgba(100, 102, 241, 0.4); border-radius: 10px; padding: 0 10px; height: 36px; overflow: hidden; }
-        .device-icon { color: #8b5cf6; --mdc-icon-size: 18px; margin-right: 8px; pointer-events: none; }
-        .device-dropdown { flex: 1; width: 100%; height: 100%; background: transparent; border: none; color: #fff; font-weight: 700; font-size: 13px; outline: none; cursor: pointer; appearance: none; -webkit-appearance: none; padding-right: 20px; text-align: center; text-align-last: center; }
-        .device-dropdown option { background: var(--bg-card); color: #fff; }
-        .device-select-wrapper::after { content: '▼'; position: absolute; right: 12px; color: #8b5cf6; font-size: 10px; pointer-events: none; }
+        .device-select-wrapper { position: relative; flex: 1; display: flex; align-items: center; background: var(--bg-tile); border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; height: 36px; overflow: hidden; }
+        .device-icon { color: var(--accent); --mdc-icon-size: 18px; margin-right: 8px; pointer-events: none; }
+        .device-dropdown { flex: 1; width: 100%; height: 100%; background: transparent; border: none; color: var(--text); font-weight: 700; font-size: 13px; outline: none; cursor: pointer; appearance: none; -webkit-appearance: none; padding-right: 20px; text-align: center; text-align-last: center; }
+        .device-dropdown option { background: var(--bg-card); color: var(--text); }
+        .device-select-wrapper::after { content: '▼'; position: absolute; right: 12px; color: var(--accent); font-size: 10px; pointer-events: none; }
 
-        .top-tabs { display: flex; flex-wrap: nowrap; gap: 6px; padding: 6px 8px; border: 1px solid rgba(101, 125, 255, 0.35); border-radius: 16px; background: rgba(10, 22, 48, 0.75); margin: 10px 10px 12px; }
-        .tab-btn { border: 0; background: rgba(255, 255, 255, 0.03); color: var(--muted); border-radius: 12px; padding: 8px 10px; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; flex: 1 1 0; min-width: 0; }
+        .top-tabs { display: flex; flex-wrap: nowrap; gap: 6px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 16px; background: var(--bg-tile); margin: 10px 10px 12px; }
+        .tab-btn { border: 0; background: transparent; color: var(--muted); border-radius: 12px; padding: 8px 10px; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; flex: 1 1 0; min-width: 0; }
         .tab-btn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
-        .tab-btn:hover { background: rgba(255, 255, 255, 0.08); transform: translateY(-2px); color: #fff; }
+        .tab-btn:hover { background: var(--line); transform: translateY(-2px); color: var(--text); }
         .tab-btn.active { color: #fff; background: linear-gradient(120deg, #6466f1, #8b5cf6); box-shadow: 0 6px 14px rgba(122, 99, 255, 0.35); transform: translateY(0); }
 
         .panel { border: 0; padding: 0 10px 12px; background: transparent; }
@@ -411,7 +525,7 @@ export const UIRenderMixin = {
         .hero {
           position: relative;
           display: flex; flex-direction: column;
-          border-bottom: 1px solid rgba(70, 106, 233, 0.25); overflow: hidden;
+          border-bottom: 1px solid var(--line); overflow: hidden;
           background: #060e22; padding-bottom: 14px;
         }
 
@@ -436,11 +550,11 @@ export const UIRenderMixin = {
 
         .hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
         .hero-titles { flex: 1; min-width: 0; }
-        .song-title { margin: 0; font-size: 16px; font-weight: 800; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-shadow: 0 2px 6px rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.5); }
-        .song-sub { margin-top: 4px; color: #d3dffa; font-size: 12px; font-weight: 600; text-shadow: 0 2px 4px rgba(0,0,0,0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .song-title { margin: 0; font-size: 16px; font-weight: 800; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.5); }
+        .song-sub { margin-top: 4px; color: var(--muted); font-size: 12px; font-weight: 600; text-shadow: 0 2px 4px rgba(0,0,0,0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
         .hero-top-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-        .pill { display: inline-flex; align-items: center; justify-content: center; min-width: 80px; height: 30px; padding: 0 10px; border-radius: 9px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; background: rgba(7, 16, 40, 0.7); border: 1px solid rgba(79, 141, 255, 0.3); backdrop-filter: blur(4px); flex-shrink: 0; }
+        .pill { display: inline-flex; align-items: center; justify-content: center; min-width: 80px; height: 30px; padding: 0 10px; border-radius: 9px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; background: rgba(7, 16, 40, 0.7); border: 1px solid rgba(79, 141, 255, 0.3); color: #fff; backdrop-filter: blur(4px); flex-shrink: 0; }
         .hero-actions { display: flex; gap: 4px; align-items: center; margin-top: 4px; }
         
         .player-stage-new { margin-top: 14px; display: flex; align-items: center; }
@@ -460,26 +574,19 @@ export const UIRenderMixin = {
         }
         
         .icon-btn-transparent {
-          background: transparent; border: none; color: rgba(255, 255, 255, 0.75); cursor: pointer; padding: 8px;
+          background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 8px;
           border-radius: 50%; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); outline: none;
           display: inline-flex; align-items: center; justify-content: center;
         }
         .icon-btn-transparent:hover {
-          color: #fff; transform: scale(1.3) translateY(-2px);
+          color: var(--text); transform: scale(1.3) translateY(-2px);
           filter: drop-shadow(0 4px 10px rgba(255, 255, 255, 0.6));
         }
         .btn-large ha-icon { --mdc-icon-size: 46px; }
         .icon-btn-transparent ha-icon { --mdc-icon-size: 28px; }
 
-        .waveform-full {
-          height: 42px; display: flex; align-items: flex-end; justify-content: center; gap: 4px; overflow: hidden; padding: 0 14px;
-        }
-        
-        .wave-bar {
-          flex: 1; max-width: 6px; height: var(--h); border-radius: 4px;
-          background: linear-gradient(180deg, #a259ff, #6366f1); transform-origin: bottom; opacity: 0.6;
-          box-shadow: 0 0 6px rgba(162, 89, 255, 0.4);
-        }
+        .waveform-full { height: 42px; display: flex; align-items: flex-end; justify-content: center; gap: 4px; overflow: hidden; padding: 0 14px; }
+        .wave-bar { flex: 1; max-width: 6px; height: var(--h); border-radius: 4px; background: linear-gradient(180deg, #a259ff, #6366f1); transform-origin: bottom; opacity: 0.6; box-shadow: 0 0 6px rgba(162, 89, 255, 0.4); }
 
         .hero.is-playing.wave-effect-0 .wave-bar { animation: waveDance calc(300ms + (var(--i) * 12ms)) ease-in-out infinite alternate; opacity: 1; }
         .hero.is-playing.wave-effect-1 .wave-bar { animation: wavePulse calc(250ms + (var(--i) * 10ms)) cubic-bezier(0.4, 0, 0.2, 1) infinite alternate; opacity: 1; }
@@ -494,11 +601,11 @@ export const UIRenderMixin = {
         @keyframes discSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
         .progress-row { display: flex; align-items: center; gap: 10px; padding: 4px 0 12px; }
-        .time-text { font-size: 11px; font-weight: 700; color: #c4d4f2; width: 55px; }
+        .time-text { font-size: 11px; font-weight: 700; color: var(--muted); width: 55px; }
         #playback-position { text-align: left; }
         #playback-duration { text-align: right; }
 
-        .progress-track-new { flex: 1; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; cursor: pointer; position: relative; }
+        .progress-track-new { flex: 1; height: 4px; background: var(--line); border-radius: 2px; cursor: pointer; position: relative; }
         .progress-fill-new { height: 100%; background: linear-gradient(90deg, #764dff, #8b5cf6); border-radius: 2px; box-shadow: 0 0 8px rgba(120, 94, 255, 0.5); pointer-events: none;}
 
         .icon-btn-primary { background: linear-gradient(135deg, #4f8dff, #7a63ff); box-shadow: 0 6px 18px rgba(79, 141, 255, 0.35); }
@@ -510,75 +617,73 @@ export const UIRenderMixin = {
         .vol-side-left { justify-content: flex-start; }
         .vol-side-right { justify-content: flex-end; }
         
-        .vol-side ha-icon { color: #a7b5d4; --mdc-icon-size: 18px; }
+        .vol-side ha-icon { color: var(--muted); --mdc-icon-size: 18px; }
         
-        /* -- CSS mới thêm cho nút mute -- */
         .vol-side ha-icon#btn-mute-toggle.is-muted { color: #ef4444; }
-        .vol-side ha-icon#btn-mute-toggle:hover { color: #fff; }
+        .vol-side ha-icon#btn-mute-toggle:hover { color: var(--text); }
         .vol-side ha-icon#btn-mute-toggle.is-muted:hover { color: #ff6b6b; }
         
-        .vol-btn { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; color: #a7b5d4; cursor: pointer; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; transition: all 0.2s; }
-        .vol-btn:hover { background: rgba(255,255,255,0.15); color: #fff; border-color: rgba(255,255,255,0.3); transform: scale(1.1); }
+        .vol-btn { background: transparent; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; transition: all 0.2s; }
+        .vol-btn:hover { background: var(--line); color: var(--text); transform: scale(1.1); }
         .vol-btn ha-icon { --mdc-icon-size: 16px; margin: 0; }
         
         .modern-volume-track-wrap { position: relative; flex: 1; height: 6px; display: flex; align-items: center; }
         .modern-volume-slider { position: absolute; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; margin: 0; }
         .modern-volume-fill { position: absolute; height: 4px; background: linear-gradient(90deg, #4f8dff, #7a63ff); border-radius: 2px; z-index: 1; pointer-events: none; box-shadow: 0 0 8px rgba(122, 99, 255, 0.6); }
-        .modern-volume-track-wrap::before { content: ''; position: absolute; width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; }
-        .modern-volume-text { color: #a7b5d4; font-size: 11px; font-weight: 700; width: 25px; text-align: right; }
+        .modern-volume-track-wrap::before { content: ''; position: absolute; width: 100%; height: 4px; background: var(--line); border-radius: 2px; }
+        .modern-volume-text { color: var(--muted); font-size: 11px; font-weight: 700; width: 25px; text-align: right; }
 
         .subtabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 12px 10px 6px; }
-        .subtab { border: 1px solid rgba(70, 106, 233, 0.3); border-radius: 10px; padding: 8px 6px; background: rgba(255, 255, 255, 0.02); color: var(--muted); font-weight: 600; font-size: 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
-        .subtab:hover { background: rgba(255, 255, 255, 0.08); color: #fff; transform: translateY(-1px); }
+        .subtab { border: 1px solid var(--line); border-radius: 10px; padding: 8px 6px; background: var(--bg-tile); color: var(--muted); font-weight: 600; font-size: 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; transition: all 0.2s; }
+        .subtab:hover { background: var(--line); color: var(--text); transform: translateY(-1px); }
         .subtab.active { background: linear-gradient(120deg, rgba(100, 102, 241, 0.9), rgba(139, 92, 246, 0.88)); color: #fff; border-color: transparent; box-shadow: 0 4px 10px rgba(100, 102, 241, 0.3); }
 
         .search-row { display: flex; gap: 10px; padding: 8px 10px; }
         .search-row .icon-btn { width: 40px; height: 40px; flex: 0 0 40px; border-radius: 12px; border: 0; color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
         .search-row .icon-btn ha-icon { --mdc-icon-size: 20px; }
-        .text-input { flex: 1; min-width: 0; height: 40px; border-radius: 12px; border: 1px solid rgba(79, 141, 255, 0.3); background: rgba(11, 24, 54, 0.6); color: #fff; padding: 8px 12px; font-size: 14px; outline: none; transition: border-color 0.3s, box-shadow 0.3s, background 0.3s; }
-        .text-input:focus { border-color: rgba(122, 99, 255, 0.9); background: rgba(11, 24, 54, 0.9); box-shadow: 0 0 0 2px rgba(122, 99, 255, 0.4); }
+        .text-input { flex: 1; min-width: 0; height: 40px; border-radius: 12px; border: 1px solid var(--line); background: var(--input-bg); color: var(--text); padding: 8px 12px; font-size: 14px; outline: none; transition: border-color 0.3s, box-shadow 0.3s, background 0.3s; }
+        .text-input:focus { border-color: var(--accent); background: var(--input-bg); box-shadow: 0 0 0 2px var(--line); }
 
         .label-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; color: var(--text); font-size: 13px; }
         .small { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
-        input[type="range"] { width: 100%; accent-color: #7a63ff; cursor: pointer; }
+        input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer; }
 
         .results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px; padding: 0 10px 12px; max-height: 380px; overflow: auto; overflow-x: hidden; scroll-behavior: smooth; }
-        .empty { border: 1px dashed rgba(79, 141, 255, 0.35); border-radius: 12px; padding: 14px; color: var(--muted); text-align: center; font-size: 13px; grid-column: 1 / -1; }
-        .result-item { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid rgba(70, 106, 233, 0.25); border-radius: 14px; padding: 8px 10px; background: rgba(255, 255, 255, 0.02); width: 100%; box-sizing: border-box; min-height: 66px; }
+        .empty { border: 1px dashed var(--line); border-radius: 12px; padding: 14px; color: var(--muted); text-align: center; font-size: 13px; grid-column: 1 / -1; }
+        .result-item { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 14px; padding: 8px 10px; background: var(--bg-tile); width: 100%; box-sizing: border-box; min-height: 66px; }
         .result-meta { grid-column: 2; min-width: 0; max-width: 100%; overflow: hidden; }
         .result-item.playable { cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; }
         
         .result-item.playable:hover, .result-item.is-playing-item { 
-          border-color: rgba(122, 99, 255, 0.7); 
-          background: rgba(122, 99, 255, 0.12); 
+          border-color: var(--accent); 
+          background: var(--line); 
           transform: translateY(-2px); 
-          box-shadow: 0 6px 16px rgba(0,0,0,0.25); 
+          box-shadow: 0 6px 16px rgba(0,0,0,0.15); 
         }
         
         .result-item.is-playing-item { 
-          border: 1px solid rgba(122, 99, 255, 0.9); 
-          background: rgba(122, 99, 255, 0.18); 
+          border: 1px solid var(--accent); 
         }
         .result-item.is-playing-item .result-title { 
-          color: #a5b4fc; 
-          text-shadow: 0 0 8px rgba(165, 180, 252, 0.3); 
+          color: var(--accent); 
+          text-shadow: 0 0 8px rgba(122, 99, 255, 0.3); 
         }
 
         .result-item.playable:active { transform: translateY(0); }
 
-        .thumb-wrap { width: 50px; height: 50px; border-radius: 10px; overflow: hidden; background: rgba(255, 255, 255, 0.05); }
+        .thumb-wrap { width: 50px; height: 50px; border-radius: 10px; overflow: hidden; background: var(--line); }
         .thumb { width: 50px; height: 50px; object-fit: cover; display: block; }
         .thumb.fallback { display: flex; align-items: center; justify-content: center; color: var(--muted); }
 
-        .result-title { display: -webkit-box; width: 100%; max-width: 100%; font-size: 12.5px; font-weight: 700; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: normal; line-height: 1.2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+        .result-title { display: -webkit-box; width: 100%; max-width: 100%; font-size: 12.5px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: normal; line-height: 1.2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
         .result-artist { margin-top: 2px; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .result-duration { margin-top: 1px; font-size: 13px; font-weight: 600; color: rgba(165, 184, 214, 0.78); }
+        .result-duration { margin-top: 1px; font-size: 13px; font-weight: 600; color: var(--muted); }
 
         .result-actions { grid-column: 3; grid-row: 1; display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-shrink: 0; }
         .result-actions ha-icon { --mdc-icon-size: 16px; }
 
-        .mini-btn { border: 1px solid rgba(80, 122, 255, 0.45); border-radius: 10px; background: rgba(255, 255, 255, 0.05); color: #dbe6ff; font-weight: 700; padding: 6px 10px; font-size: 11px; cursor: pointer; white-space: nowrap; }
-        .hover-pop:hover { transform: translateY(-2px); background: rgba(255, 255, 255, 0.12); }
+        .mini-btn { border: 1px solid var(--line); border-radius: 10px; background: var(--bg-tile); color: var(--text); font-weight: 700; padding: 6px 10px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+        .hover-pop:hover { transform: translateY(-2px); background: var(--line); }
         .hover-scale:hover { transform: scale(1.05); filter: brightness(1.1); }
         .hover-lift:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
 
@@ -591,12 +696,12 @@ export const UIRenderMixin = {
         .result-actions .play-btn { font-size: 11px; }
         .actions-inline { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 
-        .tile { border: 1px solid rgba(70, 106, 233, 0.25); border-radius: 16px; background: rgba(255, 255, 255, 0.02); padding: 12px; margin-bottom: 10px; }
-        .section-title { margin: 0 0 12px 10px; font-size: 24px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+        .tile { border: 1px solid var(--line); border-radius: 16px; background: var(--bg-tile); padding: 12px; margin-bottom: 10px; }
+        .section-title { margin: 0 0 12px 10px; font-size: 24px; font-weight: 800; display: flex; align-items: center; gap: 8px; color: var(--text); }
 
         .switch { position: relative; width: 44px; height: 24px; display: inline-block; }
         .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; inset: 0; background: rgba(255, 255, 255, 0.15); border-radius: 999px; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; }
+        .slider { position: absolute; inset: 0; background: var(--line); border-radius: 999px; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; }
         .slider::before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; border-radius: 50%; background: #fff; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
         .switch input:checked + .slider { background: linear-gradient(120deg, #4f8dff, #7a63ff); }
         .switch input:checked + .slider::before { transform: translateX(20px); }
@@ -604,9 +709,10 @@ export const UIRenderMixin = {
         .danger-btn { width: 100%; min-height: 40px; border-radius: 12px; border: 1px solid rgba(255, 120, 120, 0.3); background: linear-gradient(120deg, rgba(239, 68, 68, 0.15), rgba(220, 38, 38, 0.25)); color: #ff9999; font-size: 14px; font-weight: 800; display: inline-flex; gap: 8px; align-items: center; justify-content: center; cursor: pointer; }
         .danger-btn:hover { background: linear-gradient(120deg, rgba(239, 68, 68, 0.8), rgba(220, 38, 38, 1)); color: #fff; }
 
-        .chat-shell { border-radius: 16px; border: 1px solid rgba(87, 107, 230, 0.3); margin: 0 10px; }
+        .chat-shell { border-radius: 16px; border: 1px solid var(--line); margin: 0 10px; }
         .chat-item { max-width: 85%; padding: 8px 12px; font-size: 13px; }
-        .chat-head { font-size: 9px; padding: 0 6px; min-height: 16px; margin-bottom: 4px; }
+        .chat-head { font-size: 9px; padding: 0 6px; min-height: 16px; margin-bottom: 4px; color: var(--muted); }
+        .chat-content { color: var(--text); }
         .chat-composer-input { min-height: 38px; padding: 8px 12px; font-size: 13px; }
         .chat-send-btn { width: 38px; height: 38px; }
 
@@ -643,21 +749,15 @@ export const UIRenderMixin = {
     this._dongBoTienDoDom();
     this._capNhatHenGioTienDo();
 
-    // Tự động cuộn đến bài đang phát sau khi render xong UI
     if (this._activeTab === "media") {
       const playbackInfo = this._thongTinPhat();
-      // Nhận diện theo ID, nếu không có ID thì nhận diện theo tiêu đề
       const currentTrackIdent = playbackInfo.track_id || playbackInfo.title;
       
-      // Chỉ cuộn màn hình nếu bài hát thực sự thay đổi
       if (currentTrackIdent && this._lastScrolledTrackIdent !== currentTrackIdent) {
         this._lastScrolledTrackIdent = currentTrackIdent;
-        
-        // Đặt timeout nhỏ để đảm bảo DOM đã render danh sách hoàn toàn
         setTimeout(() => {
           const activeItem = this.shadowRoot?.querySelector('.is-playing-item');
           if (activeItem) {
-            // Cuộn tự động bài hát vào giữa (center) danh sách
             activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
         }, 150);
