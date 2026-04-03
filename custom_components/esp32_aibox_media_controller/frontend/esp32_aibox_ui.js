@@ -104,7 +104,6 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     }
     return {
       entity: entity,
-      title: "ESP32 AIBox",
     };
   }
 
@@ -117,7 +116,6 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
       throw new Error("ESP32 AIBox Card: 'entity' is required");
     }
     this._config = {
-      title: "ESP32 AIBox",
       ...config,
     };
     this._lastEntityRef = null;

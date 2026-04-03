@@ -29,7 +29,7 @@ export const UIRenderMixin = {
     while ((match = rgbRegex.exec(str)) !== null) {
       colors.push({ r: parseInt(match[1], 10), g: parseInt(match[2], 10), b: parseInt(match[3], 10) });
     }
-    if (colors.length === 0) return { r: 7, g: 20, b: 48 };
+    if (colors.length === 0) return { r: 15, g: 23, b: 42 }; 
     let r = 0, g = 0, b = 0;
     colors.forEach(c => { r += c.r; g += c.g; b += c.b; });
     return { r: Math.round(r / colors.length), g: Math.round(g / colors.length), b: Math.round(b / colors.length) };
@@ -365,83 +365,103 @@ export const UIRenderMixin = {
       return;
     }
 
-    // -- TÍNH TOÁN STYLES --
+    // -- TÍNH TOÁN STYLES & THUẬT TOÁN ĐỘ TƯƠNG PHẢN --
     const conf = this._config || {};
     let bgStr = '';
     let stringForContrastCalc = '';
-    const bgType = conf.bg_type || 'default'; 
+    const bgType = conf.bg_type || 'gradient'; 
     const bgOpacity = conf.bg_opacity !== undefined ? conf.bg_opacity : 100;
 
     if (bgType === 'gradient') {
       const preset = conf.bg_gradient_preset || 'linear-gradient(135deg, #1e293b, #0f172a)';
       if (preset === 'custom') {
-         bgStr = `linear-gradient(${conf.bg_gradient_angle || 135}deg, ${this._hexToRgba(conf.bg_gradient_color1 || '#1e293b', bgOpacity)}, ${this._hexToRgba(conf.bg_gradient_color2 || '#0f172a', bgOpacity)})`;
-         stringForContrastCalc = `${conf.bg_gradient_color1} ${conf.bg_gradient_color2}`;
+         const color1 = conf.bg_gradient_color1 || '#1e293b';
+         const color2 = conf.bg_gradient_color2 || '#0f172a';
+         const angle = conf.bg_gradient_angle !== undefined ? conf.bg_gradient_angle : 135;
+         bgStr = `linear-gradient(${angle}deg, ${this._hexToRgba(color1, bgOpacity)}, ${this._hexToRgba(color2, bgOpacity)})`;
+         stringForContrastCalc = `${color1} ${color2}`;
       } else {
          bgStr = this._applyOpacityToGradientStr(preset, bgOpacity);
          stringForContrastCalc = preset;
       }
-    } else if (bgType === 'solid') {
-      bgStr = this._hexToRgba(conf.bg_color || '#071430', bgOpacity);
-      stringForContrastCalc = conf.bg_color || '#071430';
-    } else {
-      bgStr = `radial-gradient(1400px 400px at 0% -20%, rgba(84, 81, 255, 0.18), transparent 52%), radial-gradient(1000px 380px at 100% -10%, rgba(66, 167, 255, 0.16), transparent 58%), linear-gradient(180deg, #040b1d 0%, #071430 100%)`;
-      stringForContrastCalc = '#071430';
+    } else { 
+      const bgColor = conf.bg_color || '#0f172a';
+      bgStr = this._hexToRgba(bgColor, bgOpacity);
+      stringForContrastCalc = bgColor;
     }
 
-    // Border
-    const borderEnabled = conf.border_enable !== undefined ? conf.border_enable : false;
-    let borderStr = '1px solid rgba(255, 255, 255, 0.06)';
-    if (borderEnabled) {
-      borderStr = `${conf.border_width || 1}px solid ${this._hexToRgba(conf.border_color || '#ffffff', conf.border_opacity !== undefined ? conf.border_opacity : 100)}`;
-    } else if (bgType !== 'default') {
-      borderStr = 'none';
-    }
+    // Auto Contrast & Colors (Thuật toán điện năng)
+    const autoContrastEnabled = conf.auto_contrast !== undefined ? conf.auto_contrast : true;
+    let c_text = conf.textColor || '#f9fafb';
+    let c_muted = conf.mutedColor || '#9ca3af';
+    let c_tile_bg = conf.tileBg || 'rgba(255, 255, 255, 0.04)';
+    let c_line = conf.lineColor || 'rgba(255, 255, 255, 0.15)';
+    let c_card_bg_var = '#0f172a';
+    let c_accent = '#818cf8';
+    let c_input_bg = 'rgba(0, 0, 0, 0.2)';
 
-    // Shadow
-    const shadowEnabled = conf.shadow_enable !== undefined ? conf.shadow_enable : false;
-    let shadowStr = '0 16px 32px rgba(0, 0, 0, 0.3)';
-    if (shadowEnabled) {
-      shadowStr = `${conf.shadow_offset_x || 0}px ${conf.shadow_offset_y || 8}px ${conf.shadow_blur || 20}px ${this._hexToRgba(conf.shadow_color || '#000000', conf.shadow_opacity !== undefined ? conf.shadow_opacity : 30)}`;
-    } else if (bgType !== 'default') {
-      shadowStr = 'none';
-    }
-
-    // Auto Contrast & Colors
-    const autoContrast = conf.auto_contrast !== undefined ? conf.auto_contrast : true;
-    let c_text = conf.textColor || '#f2f5ff';
-    let c_muted = conf.mutedColor || '#a7b5d4';
-    let c_tile_bg = conf.tileBg || 'rgba(255, 255, 255, 0.02)';
-    let c_line = conf.lineColor || 'rgba(70, 106, 233, 0.25)';
-    let c_card_bg_var = '#071430';
-    let c_accent = '#7a63ff';
-    let c_input_bg = 'rgba(11, 24, 54, 0.6)';
-
-    if (autoContrast && bgType !== 'default') {
+    if (autoContrastEnabled) {
        const avgColor = this._getAverageColor(stringForContrastCalc);
        const op = bgOpacity / 100;
-       const baseBg = 30; 
+       
+       let isDarkTheme = false;
+       if (this._hass && this._hass.themes && this._hass.themes.darkMode !== undefined) {
+           isDarkTheme = this._hass.themes.darkMode;
+       } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+           isDarkTheme = true;
+       }
+
+       const baseBg = isDarkTheme ? 30 : 245; 
        const effR = Math.round(avgColor.r * op + baseBg * (1 - op));
        const effG = Math.round(avgColor.g * op + baseBg * (1 - op));
        const effB = Math.round(avgColor.b * op + baseBg * (1 - op));
        const yiq = ((effR * 299) + (effG * 587) + (effB * 114)) / 1000;
-       
-       if (yiq >= 135) { // Light background
+       const isLightBackground = yiq >= 135;
+
+       let r = effR / 255, g = effG / 255, b = effB / 255;
+       let max = Math.max(r, g, b), min = Math.min(r, g, b);
+       let h, s, l = (max + min) / 2;
+       if (max == min) { h = s = 0; }
+       else {
+           let d = max - min;
+           s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+           switch(max) {
+               case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+               case g: h = (b - r) / d + 2; break;
+               case b: h = (r - g) / d + 4; break;
+           }
+           h /= 6;
+       }
+       let hue = Math.round(h * 360);
+
+       if (isLightBackground) {
            c_text = '#111827';
            c_muted = '#4b5563';
-           c_tile_bg = 'rgba(0, 0, 0, 0.04)';
-           c_line = 'rgba(0, 0, 0, 0.12)';
+           c_tile_bg = `rgba(0, 0, 0, ${Math.max(0.04, op * 0.08)})`;
+           c_line = `rgba(0, 0, 0, ${Math.max(0.12, op * 0.15)})`;
            c_card_bg_var = '#ffffff';
-           c_accent = '#4f46e5';
-           c_input_bg = 'rgba(0, 0, 0, 0.05)';
-       } else { // Dark background
+           c_input_bg = `rgba(0, 0, 0, ${Math.max(0.05, op * 0.08)})`;
+
+           if (s < 0.15) { c_accent = '#2563eb'; } 
+           else if (hue >= 330 || hue < 30) { c_accent = '#dc2626'; } 
+           else if (hue >= 30 && hue < 90) { c_accent = '#d97706'; } 
+           else if (hue >= 90 && hue < 170) { c_accent = '#059669'; } 
+           else if (hue >= 170 && hue < 260) { c_accent = '#2563eb'; } 
+           else { c_accent = '#7c3aed'; } 
+       } else {
            c_text = '#f9fafb';
            c_muted = '#9ca3af';
-           c_tile_bg = 'rgba(255, 255, 255, 0.04)';
-           c_line = 'rgba(255, 255, 255, 0.15)';
+           c_tile_bg = `rgba(255, 255, 255, ${Math.max(0.04, op * 0.08)})`;
+           c_line = `rgba(255, 255, 255, ${Math.max(0.15, op * 0.2)})`;
            c_card_bg_var = '#0f172a';
-           c_accent = '#818cf8';
-           c_input_bg = 'rgba(0, 0, 0, 0.2)';
+           c_input_bg = `rgba(0, 0, 0, ${Math.max(0.2, op * 0.3)})`;
+
+           if (s < 0.15) { c_accent = '#60a5fa'; } 
+           else if (hue >= 330 || hue < 30) { c_accent = '#f87171'; } 
+           else if (hue >= 30 && hue < 90) { c_accent = '#fbbf24'; } 
+           else if (hue >= 90 && hue < 170) { c_accent = '#34d399'; } 
+           else if (hue >= 170 && hue < 260) { c_accent = '#60a5fa'; } 
+           else { c_accent = '#a78bfa'; } 
        }
     }
 
@@ -496,10 +516,10 @@ export const UIRenderMixin = {
 
         ha-card {
           width: 100%; max-width: none; margin: 0; border-radius: 24px; overflow: hidden; 
-          border: ${borderStr};
+          border: none;
           background: ${bgStr};
           color: var(--text); 
-          box-shadow: ${shadowStr}; 
+          box-shadow: none; 
           padding: 0;
         }
 
@@ -517,7 +537,7 @@ export const UIRenderMixin = {
         .tab-btn { border: 0; background: transparent; color: var(--muted); border-radius: 12px; padding: 8px 10px; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; flex: 1 1 0; min-width: 0; }
         .tab-btn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
         .tab-btn:hover { background: var(--line); transform: translateY(-2px); color: var(--text); }
-        .tab-btn.active { color: #fff; background: linear-gradient(120deg, #6466f1, #8b5cf6); box-shadow: 0 6px 14px rgba(122, 99, 255, 0.35); transform: translateY(0); }
+        .tab-btn.active { color: #fff; background: var(--accent); box-shadow: 0 4px 10px rgba(0,0,0,0.2); transform: translateY(0); }
 
         .panel { border: 0; padding: 0 10px 12px; background: transparent; }
         .panel-media { padding: 0; overflow: hidden; }
@@ -551,16 +571,16 @@ export const UIRenderMixin = {
         .hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
         .hero-titles { flex: 1; min-width: 0; }
         .song-title { margin: 0; font-size: 16px; font-weight: 800; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.5); }
-        .song-sub { margin-top: 4px; color: var(--muted); font-size: 12px; font-weight: 600; text-shadow: 0 2px 4px rgba(0,0,0,0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .song-sub { margin-top: 4px; color: #d3dffa; font-size: 12px; font-weight: 600; text-shadow: 0 2px 4px rgba(0,0,0,0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
         .hero-top-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-        .pill { display: inline-flex; align-items: center; justify-content: center; min-width: 80px; height: 30px; padding: 0 10px; border-radius: 9px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; background: rgba(7, 16, 40, 0.7); border: 1px solid rgba(79, 141, 255, 0.3); color: #fff; backdrop-filter: blur(4px); flex-shrink: 0; }
+        .pill { display: inline-flex; align-items: center; justify-content: center; min-width: 80px; height: 30px; padding: 0 10px; border-radius: 9px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; background: rgba(7, 16, 40, 0.7); border: 1px solid rgba(255,255,255,0.2); color: #fff; backdrop-filter: blur(4px); flex-shrink: 0; }
         .hero-actions { display: flex; gap: 4px; align-items: center; margin-top: 4px; }
         
         .player-stage-new { margin-top: 14px; display: flex; align-items: center; }
-        .cover-disc { width: 80px; height: 80px; flex: 0 0 80px; border-radius: 50%; overflow: hidden; border: 2px solid rgba(118, 159, 255, 0.4); box-shadow: 0 6px 20px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 30% 25%, rgba(100, 105, 245, 0.46), rgba(13, 24, 52, 0.95)); }
+        .cover-disc { width: 80px; height: 80px; flex: 0 0 80px; border-radius: 50%; overflow: hidden; border: 2px solid rgba(255,255,255, 0.3); box-shadow: 0 6px 20px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 30% 25%, rgba(255,255,255, 0.1), rgba(0,0,0, 0.6)); }
         .cover-disc img { width: 100%; height: 100%; object-fit: cover; }
-        .cover-disc ha-icon { color: #d8e4ff; --mdc-icon-size: 28px; }
+        .cover-disc ha-icon { color: #fff; --mdc-icon-size: 28px; }
         .hero.is-playing .cover-disc.spinning { animation: discSpin 8s linear infinite; }
 
         .hero-bottom {
@@ -574,19 +594,19 @@ export const UIRenderMixin = {
         }
         
         .icon-btn-transparent {
-          background: transparent; border: none; color: var(--muted); cursor: pointer; padding: 8px;
+          background: transparent; border: none; color: rgba(255,255,255,0.7); cursor: pointer; padding: 8px;
           border-radius: 50%; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); outline: none;
           display: inline-flex; align-items: center; justify-content: center;
         }
         .icon-btn-transparent:hover {
-          color: var(--text); transform: scale(1.3) translateY(-2px);
+          color: #fff; transform: scale(1.3) translateY(-2px);
           filter: drop-shadow(0 4px 10px rgba(255, 255, 255, 0.6));
         }
         .btn-large ha-icon { --mdc-icon-size: 46px; }
         .icon-btn-transparent ha-icon { --mdc-icon-size: 28px; }
 
         .waveform-full { height: 42px; display: flex; align-items: flex-end; justify-content: center; gap: 4px; overflow: hidden; padding: 0 14px; }
-        .wave-bar { flex: 1; max-width: 6px; height: var(--h); border-radius: 4px; background: linear-gradient(180deg, #a259ff, #6366f1); transform-origin: bottom; opacity: 0.6; box-shadow: 0 0 6px rgba(162, 89, 255, 0.4); }
+        .wave-bar { flex: 1; max-width: 6px; height: var(--h); border-radius: 4px; background: var(--accent); transform-origin: bottom; opacity: 0.6; box-shadow: 0 0 6px var(--accent); }
 
         .hero.is-playing.wave-effect-0 .wave-bar { animation: waveDance calc(300ms + (var(--i) * 12ms)) ease-in-out infinite alternate; opacity: 1; }
         .hero.is-playing.wave-effect-1 .wave-bar { animation: wavePulse calc(250ms + (var(--i) * 10ms)) cubic-bezier(0.4, 0, 0.2, 1) infinite alternate; opacity: 1; }
@@ -594,22 +614,22 @@ export const UIRenderMixin = {
 
         @keyframes waveDance { 0% { transform: scaleY(0.2); } 100% { transform: scaleY(1.3); } }
         @keyframes wavePulse { 
-          0% { transform: scaleY(0.1); background: linear-gradient(180deg, #ff5983, #ff8a63); box-shadow: 0 0 10px rgba(255, 89, 131, 0.6); } 
-          100% { transform: scaleY(1.2); background: linear-gradient(180deg, #a259ff, #6366f1); box-shadow: 0 0 10px rgba(162, 89, 255, 0.6); } 
+          0% { transform: scaleY(0.1); filter: hue-rotate(45deg); box-shadow: 0 0 10px var(--accent); } 
+          100% { transform: scaleY(1.2); filter: hue-rotate(0deg); box-shadow: 0 0 10px var(--accent); } 
         }
         @keyframes waveSweep { 0%, 100% { transform: scaleY(0.15); } 50% { transform: scaleY(1.4); } }
         @keyframes discSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
         .progress-row { display: flex; align-items: center; gap: 10px; padding: 4px 0 12px; }
-        .time-text { font-size: 11px; font-weight: 700; color: var(--muted); width: 55px; }
+        .time-text { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.7); width: 55px; }
         #playback-position { text-align: left; }
         #playback-duration { text-align: right; }
 
-        .progress-track-new { flex: 1; height: 4px; background: var(--line); border-radius: 2px; cursor: pointer; position: relative; }
-        .progress-fill-new { height: 100%; background: linear-gradient(90deg, #764dff, #8b5cf6); border-radius: 2px; box-shadow: 0 0 8px rgba(120, 94, 255, 0.5); pointer-events: none;}
+        .progress-track-new { flex: 1; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; cursor: pointer; position: relative; }
+        .progress-fill-new { height: 100%; background: var(--accent); border-radius: 2px; box-shadow: 0 0 8px var(--accent); pointer-events: none;}
 
-        .icon-btn-primary { background: linear-gradient(135deg, #4f8dff, #7a63ff); box-shadow: 0 6px 18px rgba(79, 141, 255, 0.35); }
-        .icon-btn-primary:hover { box-shadow: 0 10px 24px rgba(79, 141, 255, 0.5); filter: brightness(1.15); }
+        .icon-btn-primary { background: var(--accent); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+        .icon-btn-primary:hover { filter: brightness(1.15); }
 
         .modern-volume-container { display: flex; align-items: center; gap: 10px; padding: 16px 14px 4px; }
         
@@ -629,20 +649,20 @@ export const UIRenderMixin = {
         
         .modern-volume-track-wrap { position: relative; flex: 1; height: 6px; display: flex; align-items: center; }
         .modern-volume-slider { position: absolute; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; margin: 0; }
-        .modern-volume-fill { position: absolute; height: 4px; background: linear-gradient(90deg, #4f8dff, #7a63ff); border-radius: 2px; z-index: 1; pointer-events: none; box-shadow: 0 0 8px rgba(122, 99, 255, 0.6); }
+        .modern-volume-fill { position: absolute; height: 4px; background: var(--accent); border-radius: 2px; z-index: 1; pointer-events: none; }
         .modern-volume-track-wrap::before { content: ''; position: absolute; width: 100%; height: 4px; background: var(--line); border-radius: 2px; }
         .modern-volume-text { color: var(--muted); font-size: 11px; font-weight: 700; width: 25px; text-align: right; }
 
         .subtabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 12px 10px 6px; }
         .subtab { border: 1px solid var(--line); border-radius: 10px; padding: 8px 6px; background: var(--bg-tile); color: var(--muted); font-weight: 600; font-size: 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; transition: all 0.2s; }
         .subtab:hover { background: var(--line); color: var(--text); transform: translateY(-1px); }
-        .subtab.active { background: linear-gradient(120deg, rgba(100, 102, 241, 0.9), rgba(139, 92, 246, 0.88)); color: #fff; border-color: transparent; box-shadow: 0 4px 10px rgba(100, 102, 241, 0.3); }
+        .subtab.active { background: var(--accent); color: #fff; border-color: transparent; }
 
         .search-row { display: flex; gap: 10px; padding: 8px 10px; }
         .search-row .icon-btn { width: 40px; height: 40px; flex: 0 0 40px; border-radius: 12px; border: 0; color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
         .search-row .icon-btn ha-icon { --mdc-icon-size: 20px; }
         .text-input { flex: 1; min-width: 0; height: 40px; border-radius: 12px; border: 1px solid var(--line); background: var(--input-bg); color: var(--text); padding: 8px 12px; font-size: 14px; outline: none; transition: border-color 0.3s, box-shadow 0.3s, background 0.3s; }
-        .text-input:focus { border-color: var(--accent); background: var(--input-bg); box-shadow: 0 0 0 2px var(--line); }
+        .text-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--line); }
 
         .label-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; color: var(--text); font-size: 13px; }
         .small { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
@@ -658,15 +678,13 @@ export const UIRenderMixin = {
           border-color: var(--accent); 
           background: var(--line); 
           transform: translateY(-2px); 
-          box-shadow: 0 6px 16px rgba(0,0,0,0.15); 
         }
         
         .result-item.is-playing-item { 
-          border: 1px solid var(--accent); 
+          border-width: 2px; 
         }
         .result-item.is-playing-item .result-title { 
           color: var(--accent); 
-          text-shadow: 0 0 8px rgba(122, 99, 255, 0.3); 
         }
 
         .result-item.playable:active { transform: translateY(0); }
@@ -685,14 +703,11 @@ export const UIRenderMixin = {
         .mini-btn { border: 1px solid var(--line); border-radius: 10px; background: var(--bg-tile); color: var(--text); font-weight: 700; padding: 6px 10px; font-size: 11px; cursor: pointer; white-space: nowrap; }
         .hover-pop:hover { transform: translateY(-2px); background: var(--line); }
         .hover-scale:hover { transform: scale(1.05); filter: brightness(1.1); }
-        .hover-lift:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+        .hover-lift:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
 
-        .mini-btn.active { background: linear-gradient(120deg, #3578eb, #5d5eea); border-color: rgba(93, 117, 235, 0.85); color: #fff; }
-        .mini-btn-accent { min-width: 28px; min-height: 28px; border-radius: 8px; padding: 0; background: #2f6dff; border-color: rgba(60, 120, 255, 0.8); color: #fff; display: inline-flex; align-items: center; justify-content: center; }
-        .mini-btn-accent:hover { background: #4f8dff; transform: scale(1.1); }
-        .mini-btn-danger { min-width: 58px; min-height: 28px; border-radius: 8px; padding: 0 8px; background: linear-gradient(135deg, #ef4444, #dc2626); border-color: transparent; color: #fff; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
-        .mini-btn-danger:hover { transform: scale(1.05); box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4); }
-
+        .mini-btn.active { background: var(--accent); color: #fff; }
+        .mini-btn-accent { min-width: 28px; min-height: 28px; border-radius: 8px; padding: 0; background: var(--accent); border-color: transparent; color: #fff; display: inline-flex; align-items: center; justify-content: center; }
+        .mini-btn-danger { min-width: 58px; min-height: 28px; border-radius: 8px; padding: 0 8px; background: #ef4444; border-color: transparent; color: #fff; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
         .result-actions .play-btn { font-size: 11px; }
         .actions-inline { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 
@@ -703,11 +718,11 @@ export const UIRenderMixin = {
         .switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; inset: 0; background: var(--line); border-radius: 999px; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; }
         .slider::before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; border-radius: 50%; background: #fff; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-        .switch input:checked + .slider { background: linear-gradient(120deg, #4f8dff, #7a63ff); }
+        .switch input:checked + .slider { background: var(--accent); }
         .switch input:checked + .slider::before { transform: translateX(20px); }
         
-        .danger-btn { width: 100%; min-height: 40px; border-radius: 12px; border: 1px solid rgba(255, 120, 120, 0.3); background: linear-gradient(120deg, rgba(239, 68, 68, 0.15), rgba(220, 38, 38, 0.25)); color: #ff9999; font-size: 14px; font-weight: 800; display: inline-flex; gap: 8px; align-items: center; justify-content: center; cursor: pointer; }
-        .danger-btn:hover { background: linear-gradient(120deg, rgba(239, 68, 68, 0.8), rgba(220, 38, 38, 1)); color: #fff; }
+        .danger-btn { width: 100%; min-height: 40px; border-radius: 12px; border: 1px solid #ef4444; background: transparent; color: #ef4444; font-size: 14px; font-weight: 800; display: inline-flex; gap: 8px; align-items: center; justify-content: center; cursor: pointer; }
+        .danger-btn:hover { background: #ef4444; color: #fff; }
 
         .chat-shell { border-radius: 16px; border: 1px solid var(--line); margin: 0 10px; }
         .chat-item { max-width: 85%; padding: 8px 12px; font-size: 13px; }
