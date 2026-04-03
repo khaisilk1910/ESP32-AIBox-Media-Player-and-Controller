@@ -1,0 +1,6 @@
+{
+  "name": "ESP32 AIBox Media Player and Controller",
+  "render_readme": true,
+  "iot_class": "calculated",
+  "zip_release": true
+}
