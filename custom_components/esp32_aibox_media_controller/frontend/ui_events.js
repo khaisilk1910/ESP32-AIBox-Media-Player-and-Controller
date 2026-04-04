@@ -447,7 +447,7 @@ export const UIEventsMixin = {
       });
     }
 
-    // CHAT ENGINE
+    // --- CHAT ENGINE ---
     const chatInput = root.getElementById("chat-input");
     if (chatInput) {
       chatInput.addEventListener("compositionstart", () => {
@@ -464,7 +464,9 @@ export const UIEventsMixin = {
         if (ev.isComposing || this._chatDangCompose) return;
         if (ev.key === "Enter") {
           ev.preventDefault();
-          await this._guiTinNhanChat();
+          if(this._chatInput.trim() !== '') {
+             await this._guiTinNhanChat();
+          }
         }
       });
       chatInput.addEventListener("blur", () => {
@@ -475,7 +477,11 @@ export const UIEventsMixin = {
     const chatSend = root.getElementById("chat-send");
     if (chatSend) {
       chatSend.addEventListener("mousedown", (ev) => { ev.preventDefault(); });
-      chatSend.addEventListener("click", async () => { await this._guiTinNhanChat(); });
+      chatSend.addEventListener("click", async () => { 
+        if(this._chatInput.trim() !== '') {
+            await this._guiTinNhanChat(); 
+        }
+      });
     }
 
     const chatWakeup = root.getElementById("chat-wakeup");
@@ -494,7 +500,6 @@ export const UIEventsMixin = {
       });
     }
 
-    // --- SỰ KIỆN MỚI CHO TAB CHAT ("DỪNG NÓI" VÀ "GHI ÂM") ---
     const chatStopSpeak = root.getElementById("chat-stop-speak");
     if (chatStopSpeak) {
       chatStopSpeak.addEventListener("click", async () => {
@@ -510,7 +515,27 @@ export const UIEventsMixin = {
         await this._lamMoiEntity(280);
       });
     }
-    // ---------------------------------------------------------
+
+    // ĐỔI NHÂN VẬT LIVE2D
+    const live2dSelect = root.getElementById("chat-live2d-select");
+    if (live2dSelect) {
+      live2dSelect.addEventListener("change", (ev) => {
+        const modelId = ev.target.value;
+        if (this._live2dManager) {
+            this._live2dManager.setModel(modelId).then(success => {
+                if (success) {
+                    localStorage.setItem('live2d_model_id', modelId);
+                    const wrapper = root.getElementById('live2d-wrapper');
+                    if (wrapper && this._live2dManager.live2dApp.view) {
+                        wrapper.innerHTML = '';
+                        wrapper.appendChild(this._live2dManager.live2dApp.view);
+                    }
+                    this._goiDichVu("esp32_aibox_media_controller", "set_live2d_model", { model_id: modelId }).catch(() => {});
+                }
+            });
+        }
+      });
+    }
 
     const chatRefresh = root.getElementById("chat-refresh");
     if (chatRefresh) {
@@ -774,7 +799,6 @@ export const UIEventsMixin = {
 
       const gain = clamp(Math.round(s * 6 + w * 2), 0, 3000);
 
-      // Cập nhật lại UI local (thanh EQ/Loudness) ngay lập tức
       if (!Array.isArray(this._eqBands) || this._eqBands.length < 5) {
           this._eqBands = [0,0,0,0,0];
       }
@@ -850,9 +874,15 @@ export const UIEventsMixin = {
         dacL.addEventListener("change", async (e) => {
             this._dacVolL = parseInt(e.target.value) || 231;
             try {
-                await this._goiDichVu("esp32_aibox_media_controller", "set_dac_volume", { channel: 'L', value: this._dacVolL });
+                // Thử gọi chuẩn service (set_mixer_value)
+                await this._goiDichVu("media_player", "set_mixer_value", { control_name: 'DAC Digital Volume L', value: this._dacVolL.toString() });
                 await this._lamMoiEntity(250, 2);
-            } catch (err) {}
+            } catch (err) {
+                // Fallback nếu component dùng chuẩn custom send_command
+                try {
+                    await this._goiDichVu("esp32_aibox_media_controller", "send_command", { type: 'sends', list: [{type: 'setMixerValue', controlName: 'DAC Digital Volume L', value: this._dacVolL.toString()}, {type: 'get_eq_config'}] });
+                } catch (e2) {}
+            }
         });
     }
 
@@ -866,9 +896,13 @@ export const UIEventsMixin = {
         dacR.addEventListener("change", async (e) => {
             this._dacVolR = parseInt(e.target.value) || 231;
             try {
-                await this._goiDichVu("esp32_aibox_media_controller", "set_dac_volume", { channel: 'R', value: this._dacVolR });
+                await this._goiDichVu("media_player", "set_mixer_value", { control_name: 'DAC Digital Volume R', value: this._dacVolR.toString() });
                 await this._lamMoiEntity(250, 2);
-            } catch (err) {}
+            } catch (err) {
+                try {
+                    await this._goiDichVu("esp32_aibox_media_controller", "send_command", { type: 'sends', list: [{type: 'setMixerValue', controlName: 'DAC Digital Volume R', value: this._dacVolR.toString()}, {type: 'get_eq_config'}] });
+                } catch (e2) {}
+            }
         });
     }
   }

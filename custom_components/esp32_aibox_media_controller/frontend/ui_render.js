@@ -349,22 +349,21 @@ export const UIRenderMixin = {
     `;
   },
 
-  // --- CẬP NHẬT TAB CHAT MỚI ---
   _veTabChat() { 
     const historyMarkup = this._chatHistory.length === 0 
-      ? `<div class="chat-empty empty" style="margin: auto; text-align: center; border: none;"><strong>Chưa có lịch sử chat</strong></div>` 
+      ? `<div class="chat-empty empty" style="margin: auto; text-align: center; border: none; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);"><strong>Chưa có lịch sử chat</strong></div>` 
       : this._chatHistory.map(item => {
           const isUser = ["user", "human", "client"].includes(String(item.message_type || item.role).toLowerCase());
           if (isUser) {
               return `
-              <div class="chat-msg-row user">
+              <div class="chat-msg-row user" style="position: relative; z-index: 10;">
                  <div class="chat-bubble user-bubble">
                     ${this._maHoaHtml(item.content || item.message || "")}
                  </div>
               </div>`;
           } else {
               return `
-              <div class="chat-msg-row ai">
+              <div class="chat-msg-row ai" style="position: relative; z-index: 10;">
                  <div class="chat-bubble ai-bubble">
                     ${this._maHoaHtml(item.content || item.message || "")}
                  </div>
@@ -372,30 +371,66 @@ export const UIRenderMixin = {
           }
         }).join("");
         
+    // Lấy model hiện tại từ local storage hoặc Live2D Manager
+    let currentModel = 'hiyori';
+    try { currentModel = localStorage.getItem('live2d_model_id') || 'hiyori'; } catch(e) {}
+    if (this._live2dManager && this._live2dManager.currentModelId) {
+        currentModel = this._live2dManager.currentModelId;
+    }
+
+    // Danh sách Model
+    const models = [
+        { id: 'hiyori', name: 'Hiyori (Nhẹ nhất, khuyên dùng)' },
+        { id: 'miku', name: 'Hatsune Miku' },
+        { id: 'haru', name: 'Haru' },
+        { id: 'wanko', name: 'Wanko (Chó cưng)' },
+        { id: 'shizuku', name: 'Shizuku' },
+        { id: 'tororo', name: 'Tororo' },
+        { id: 'hijiki', name: 'Hijiki' },
+        { id: 'ryou', name: 'Ryou' },
+        { id: 'chitose', name: 'Chitose' },
+        { id: 'nicole', name: 'Nicole (Không hỗ trợ mobile)' },
+        { id: 'changli', name: 'Changli (Không hỗ trợ mobile)' }
+    ];
+
+    const isMobile = window.innerWidth <= 768;
+
     return `
       <section class="panel panel-chat" style="padding: 0;">
-        <div class="chat-container">
-          <div class="chat-shell-header" style="border-bottom: 1px solid var(--line); padding: 12px; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2);">
+        <div class="chat-container" style="position: relative;">
+          <div id="live2d-wrapper" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; z-index: 1; opacity: 0.85;">
+            </div>
+
+          <div class="chat-shell-header" style="position: relative; z-index: 20; border-bottom: 1px solid var(--line); padding: 12px; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);">
             <div style="display: flex; align-items: center; gap: 8px;">
               <ha-icon icon="mdi:robot-outline" style="color: var(--accent);"></ha-icon>
               <strong style="font-size: 14px; color: var(--text);">Trợ lý AI</strong>
             </div>
-            <button id="chat-refresh" class="mini-btn hover-pop" style="background: transparent; border: 1px solid var(--line);"><ha-icon icon="mdi:refresh" style="--mdc-icon-size: 16px;"></ha-icon> Làm mới</button>
+            <div style="display: flex; gap: 8px;">
+              <select id="chat-live2d-select" style="background: var(--bg-tile); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 11px; outline: none; cursor: pointer; max-width: 140px;">
+                ${models.map(m => {
+                  const disabled = isMobile && (m.id === 'nicole' || m.id === 'changli') ? 'disabled' : '';
+                  const selected = m.id === currentModel ? 'selected' : '';
+                  return `<option value="${m.id}" ${disabled} ${selected}>${m.name}</option>`;
+                }).join("")}
+              </select>
+              <button id="chat-refresh" class="mini-btn hover-pop" style="background: transparent; border: 1px solid var(--line); padding: 4px 8px;"><ha-icon icon="mdi:refresh" style="--mdc-icon-size: 14px; margin-right: 4px;"></ha-icon> Làm mới</button>
+            </div>
           </div>
 
-          <div class="chat-messages chat-shell-history" id="chat-messages-container">
+          <div class="chat-messages chat-shell-history" id="chat-messages-container" style="position: relative; z-index: 10;">
             ${historyMarkup}
           </div>
 
-          <div class="chat-footer">
+          <div class="chat-footer" style="position: relative; z-index: 20; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(10px);">
             <div class="chat-buttons">
                <button id="chat-stop-speak" class="chat-btn btn-red"><ha-icon icon="mdi:stop-circle"></ha-icon> Dừng nói</button>
                <button id="chat-record" class="chat-btn btn-blue"><ha-icon icon="mdi:microphone"></ha-icon> Ghi âm</button>
-               <button id="chat-wakeup" class="chat-btn btn-purple"><ha-icon icon="mdi:account-voice"></ha-icon> Từ khóa Đ.Thức</button>
+               <button id="chat-wakeup" class="chat-btn btn-purple"><ha-icon icon="mdi:account-voice"></ha-icon> T.Khóa Đ.Thức</button>
                <button id="chat-testmic" class="chat-btn btn-slate"><ha-icon icon="mdi:waveform"></ha-icon> Test Mic</button>
             </div>
             <div class="chat-input-row">
-               <input id="chat-input" class="text-input chat-composer-input" placeholder="Nhập tin nhắn..." value="${this._maHoaHtml(this._chatInput)}" style="border-radius: 8px; height: 44px; flex: 1;" />
+               <input id="chat-input" class="text-input chat-composer-input" placeholder="Nhập tin nhắn..." value="${this._maHoaHtml(this._chatInput)}" style="border-radius: 8px; height: 44px; flex: 1; background: rgba(0,0,0,0.4);" />
                <button id="chat-send" class="chat-send-btn hover-scale"><ha-icon icon="mdi:send"></ha-icon></button>
             </div>
           </div>
@@ -403,7 +438,6 @@ export const UIRenderMixin = {
       </section>
     `;
   },
-  // ------------------------------
 
   _veTabHeThong() { 
     const eqBandColumns = Math.max(1, this._eqBandCount || EQ_BAND_LABELS.length);
@@ -863,7 +897,7 @@ export const UIRenderMixin = {
         .danger-btn { width: 100%; min-height: 40px; border-radius: 12px; border: 1px solid #ef4444; background: transparent; color: #ef4444; font-size: 14px; font-weight: 800; display: inline-flex; gap: 8px; align-items: center; justify-content: center; cursor: pointer; }
         .danger-btn:hover { background: #ef4444; color: #fff; }
 
-        /* --- CSS BỔ SUNG CHO TAB CHAT MỚI --- */
+        /* --- CSS CHO TAB CHAT & LIVE2D --- */
         .chat-container { display: flex; flex-direction: column; height: calc(100vh - 160px); min-height: 450px; max-height: 700px; background: rgba(30, 41, 59, 0.4); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin: 0 10px 10px; }
         .chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
         .chat-msg-row { display: flex; width: 100%; }
@@ -918,6 +952,19 @@ export const UIRenderMixin = {
     this._ganSuKien();
     this._dongBoTienDoDom();
     this._capNhatHenGioTienDo();
+
+    // Re-mount Live2D canvas nếu chuyển tab
+    if (this._activeTab === "chat") {
+      setTimeout(() => {
+        if (this._live2dManager && this._live2dManager.live2dApp) {
+           const live2dWrapper = this.shadowRoot.getElementById('live2d-wrapper');
+           if (live2dWrapper && this._live2dManager.live2dApp.view) {
+               live2dWrapper.innerHTML = '';
+               live2dWrapper.appendChild(this._live2dManager.live2dApp.view);
+           }
+        }
+      }, 100);
+    }
 
     if (this._activeTab === "media") {
       const playbackInfo = this._thongTinPhat();

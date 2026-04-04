@@ -339,12 +339,8 @@ export const CoreLogicMixin = {
   async _xuLyHetBai() {
     this._livePositionSeconds = 0;
     this._ignorePositionUntil = Date.now() + 4000;
-
-    // --- FIX LỖI KẸT HIGHLIGHT KHI AUTO NEXT ---
     this._optimisticTrackUntil = 0;
     this._nowPlayingCache = { trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0 };
-    // -------------------------------------------
-
     this._dongBoTienDoDom();
 
     if (this._repeatMode === "one") {
@@ -393,7 +389,6 @@ export const CoreLogicMixin = {
     const aibox = attrs.aibox_playback || {};
     const items = Array.isArray(search.items) ? search.items : [];
 
-    // --- Ưu tiên dữ liệu hiển thị (optimistic cache) thay vì chờ HA ---
     if (this._optimisticTrackUntil && Date.now() < this._optimisticTrackUntil && this._nowPlayingCache && this._nowPlayingCache.trackKey) {
        return {
            title: this._nowPlayingCache.title,
@@ -474,7 +469,6 @@ export const CoreLogicMixin = {
     const entityPlaying = entityState === "playing" || rawPlaybackState === "playing";
     const entityPaused = entityState === "paused" || entityState === "idle" || entityState === "off" || rawPlaybackState === "paused" || rawPlaybackState === "stopped" || rawPlaybackState === "idle" || rawPlaybackState === "off";
     
-    // --- Ghi đè trạng thái hiển thị bằng optimistic ngay lập tức ---
     const forcedPaused = Date.now() < this._forcePauseUntil;
     const optimisticPlaying = Date.now() < this._optimisticPlayUntil && this._lastPlayPauseSent === "play";
     
@@ -608,7 +602,6 @@ export const CoreLogicMixin = {
     this._ignorePositionUntil = Date.now() + 4000;
     this._dongBoTienDoDom();
 
-    // --- BUỘC HIỂN THỊ OPTIMISTIC NGAY LẬP TỨC ---
     const itemTitle = item.title || "Đang tải...";
     const itemArtist = item.artist || item.channel || "Chưa rõ nghệ sĩ";
     const itemDuration = item.duration_seconds || 0;
@@ -630,8 +623,7 @@ export const CoreLogicMixin = {
     this._optimisticPlayUntil = Date.now() + 5000;
     this._livePlaying = true;
     this._liveTickAt = Date.now();
-    this._veGiaoDien(); // Render tức thời ngay sau khi set cache
-    // ---------------------------------------------
+    this._veGiaoDien(); 
 
     if (normalizedSource.includes("zing")) {
       await this._goiDichVu("media_player", "play_zing", { song_id: resolvedId });
@@ -660,7 +652,6 @@ export const CoreLogicMixin = {
       }
     }
     
-    // Render ngay tức khắc để nút đổi icon
     this._veGiaoDien();
 
     try {
@@ -712,13 +703,15 @@ export const CoreLogicMixin = {
   },
 
   async _guiTinNhanChat() {
-    const text = this._layGiaTriChatInput().trim();
+    const text = (this._chatInput || "").trim();
     if (!text) return;
     this._themTinNhanChatTam(text, "user");
-    this._chatInput = ""; this._lastChatHistoryRequestAt = 0;
-    this._veGiaoDienGiuFocusChat(); this._cuonCuoiKhungChat();
+    this._chatInput = ""; 
+    this._lastChatHistoryRequestAt = 0;
+    this._veGiaoDienGiuFocusChat(); 
+    this._cuonCuoiKhungChat();
     try {
-      await this._goiDichVu("esp32_aibox_media_controller", "chat_send_text", { text });
+      await this._goiDichVu("esp32_aibox_media_controller", "chat_send_text", { text: text });
       await this._goiDichVu("esp32_aibox_media_controller", "chat_get_history");
       await this._lamMoiEntity(220, 2);
       this._cuonCuoiKhungChat();

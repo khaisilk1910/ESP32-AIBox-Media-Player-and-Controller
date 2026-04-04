@@ -98,6 +98,9 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._lastSystemStateRequestAt = 0;
     this._dangChoKetQuaTimKiem = false;
     this._timKiemDangCho = null;
+
+    // Biến lưu trữ Live2D nội bộ của thẻ
+    this._live2dManager = null;
   }
 
   static getConfigElement() {
@@ -225,8 +228,48 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._veGiaoDien();
   }
 
-  connectedCallback() { this._veGiaoDien(); }
-  disconnectedCallback() { this._xoaHenGioTienDo(); }
+  connectedCallback() { 
+    this._veGiaoDien(); 
+    this._initLive2D(); // Tải động các file thư viện cùng thư mục
+  }
+
+  disconnectedCallback() { 
+    this._xoaHenGioTienDo(); 
+  }
+
+  async _initLive2D() {
+    if (!this._live2dManager) {
+      try {
+        // Lấy đường dẫn gốc của thẻ custom card này
+        const baseUrl = new URL('.', import.meta.url).href;
+        
+        const loadScript = (src) => new Promise((resolve, reject) => {
+          if (document.querySelector(`script[src="${baseUrl + src}"]`)) { resolve(); return; }
+          const script = document.createElement('script');
+          script.src = baseUrl + src;
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+
+        // Tải tuần tự các thư viện
+        if (!window.PIXI) await loadScript('pixi.js');
+        if (!window.Live2DCubismCore) await loadScript('live2dcubismcore.min.js');
+        if (!window.PIXI || !window.PIXI.live2d) await loadScript('cubism4.min.js');
+        if (!window.Live2DManager) await loadScript('live2d.js');
+
+        // Khi thư viện đã sẵn sàng, khởi tạo
+        if (window.Live2DManager) {
+          this._live2dManager = new window.Live2DManager();
+          if (this._activeTab === "chat") {
+            this._veGiaoDien(); // Vẽ lại để render canvas
+          }
+        }
+      } catch (e) {
+        console.error("ESP32 AIBox: Lỗi tải thư viện Live2D từ local", e);
+      }
+    }
+  }
 
   _dongBoTuEntity() {
     const stateObj = this._doiTuongTrangThai();
