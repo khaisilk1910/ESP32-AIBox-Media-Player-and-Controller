@@ -29,6 +29,10 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._mediaTimKiemSauCompose = false;
     this._mediaQueryFocused = false;
 
+    // --- CÁC BIẾN MỚI CHO TAB CHAT TỪ WEB UI ---
+    this._chatBgBase64 = "";
+    this._tiktokReplyEnabled = false;
+
     this._volumeLevel = 0;
     this._preMuteVolumeLevel = null;
     this._wakeSensitivity = 0.9;
@@ -215,7 +219,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
           return;
         }
       }
-      if (activeId === "chat-input" && this._activeTab === "chat") {
+      if (activeId === "chatInput" && this._activeTab === "chat") {
         this._pendingRender = false;
         this._veGiaoDienGiuFocusChat();
         return;
@@ -230,7 +234,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
 
   connectedCallback() { 
     this._veGiaoDien(); 
-    this._initLive2D(); // Tải động các file thư viện cùng thư mục
+    this._initLive2D(); 
   }
 
   disconnectedCallback() { 
@@ -240,7 +244,6 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
   async _initLive2D() {
     if (!this._live2dManager) {
       try {
-        // Lấy đường dẫn gốc của thẻ custom card này
         const baseUrl = new URL('.', import.meta.url).href;
         
         const loadScript = (src) => new Promise((resolve, reject) => {
@@ -252,17 +255,15 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
           document.head.appendChild(script);
         });
 
-        // Tải tuần tự các thư viện
         if (!window.PIXI) await loadScript('pixi.js');
         if (!window.Live2DCubismCore) await loadScript('live2dcubismcore.min.js');
         if (!window.PIXI || !window.PIXI.live2d) await loadScript('cubism4.min.js');
         if (!window.Live2DManager) await loadScript('live2d.js');
 
-        // Khi thư viện đã sẵn sàng, khởi tạo
         if (window.Live2DManager) {
           this._live2dManager = new window.Live2DManager();
           if (this._activeTab === "chat") {
-            this._veGiaoDien(); // Vẽ lại để render canvas
+            this._veGiaoDien(); 
           }
         }
       } catch (e) {

@@ -699,7 +699,7 @@ export const CoreLogicMixin = {
       if (shouldFetchState) await this._goiDichVu("esp32_aibox_media_controller", "chat_get_state");
       if (shouldFetchHistory) await this._goiDichVu("esp32_aibox_media_controller", "chat_get_history");
       await this._lamMoiEntity(220);
-    } catch (err) { console.warn("chat bootstrap failed", err); }
+    } catch (err) {}
   },
 
   async _guiTinNhanChat() {
@@ -715,7 +715,7 @@ export const CoreLogicMixin = {
       await this._goiDichVu("esp32_aibox_media_controller", "chat_get_history");
       await this._lamMoiEntity(220, 2);
       this._cuonCuoiKhungChat();
-    } catch (err) { console.warn("chat_send_text failed", err); }
+    } catch (err) {}
   },
 
   async _damBaoTrangThaiDieuKhien() {
@@ -728,7 +728,7 @@ export const CoreLogicMixin = {
       await this._goiDichVu("esp32_aibox_media_controller", "wake_word_get_sensitivity");
       await this._goiDichVu("esp32_aibox_media_controller", "custom_ai_get_enabled");
       await this._lamMoiEntity(220);
-    } catch (err) { console.warn("control bootstrap refresh failed", err); }
+    } catch (err) {}
   },
 
   async _damBaoTrangThaiHeThong() {
@@ -738,6 +738,6 @@ export const CoreLogicMixin = {
     try {
       await this._goiDichVu("esp32_aibox_media_controller", "refresh_state");
       await this._lamMoiEntity(250, 2);
-    } catch (err) { console.warn("system bootstrap refresh failed", err); }
+    } catch (err) {}
   }
 };

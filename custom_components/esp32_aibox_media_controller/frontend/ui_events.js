@@ -368,15 +368,6 @@ export const UIEventsMixin = {
       });
     }
 
-    const wakeRefresh = root.getElementById("wake-refresh");
-    if (wakeRefresh) {
-      wakeRefresh.addEventListener("click", async () => {
-        await this._goiDichVu("esp32_aibox_media_controller", "wake_word_get_enabled");
-        await this._goiDichVu("esp32_aibox_media_controller", "wake_word_get_sensitivity");
-        await this._lamMoiEntity(220);
-      });
-    }
-
     // CHỐNG ĐIẾC
     const aiEnabled = root.getElementById("ai-enabled");
     if (aiEnabled) {
@@ -447,8 +438,10 @@ export const UIEventsMixin = {
       });
     }
 
-    // --- CHAT ENGINE ---
-    const chatInput = root.getElementById("chat-input");
+    // =========================================================================
+    // --- SỰ KIỆN MỚI CHO TAB CHAT ĐỒNG BỘ UI WEB ---
+    // =========================================================================
+    const chatInput = root.getElementById("chatInput");
     if (chatInput) {
       chatInput.addEventListener("compositionstart", () => {
         this._chatDangCompose = true;
@@ -484,35 +477,74 @@ export const UIEventsMixin = {
       });
     }
 
-    const chatWakeup = root.getElementById("chat-wakeup");
-    if (chatWakeup) {
-      chatWakeup.addEventListener("click", async () => {
+    const btnWakeUp = root.getElementById("btnWakeUp");
+    if (btnWakeUp) {
+      btnWakeUp.addEventListener("click", async () => {
         await this._goiDichVu("esp32_aibox_media_controller", "chat_wake_up");
         await this._lamMoiEntity(280);
       });
     }
 
-    const chatTestMic = root.getElementById("chat-testmic");
-    if (chatTestMic) {
-      chatTestMic.addEventListener("click", async () => {
+    const btnTestMic = root.getElementById("btnTestMic");
+    if (btnTestMic) {
+      btnTestMic.addEventListener("click", async () => {
         await this._goiDichVu("esp32_aibox_media_controller", "chat_test_mic");
         await this._lamMoiEntity(280);
       });
     }
 
-    const chatStopSpeak = root.getElementById("chat-stop-speak");
-    if (chatStopSpeak) {
-      chatStopSpeak.addEventListener("click", async () => {
-        await this._goiDichVu("esp32_aibox_media_controller", "chat_stop_speak");
-        await this._lamMoiEntity(280);
+    const btnTiktokReply = root.getElementById("btnTiktokReply");
+    if (btnTiktokReply) {
+      btnTiktokReply.addEventListener("click", async () => {
+        this._tiktokReplyEnabled = !this._tiktokReplyEnabled;
+        this._veGiaoDien(); // Update UI
+        await this._goiDichVu("esp32_aibox_media_controller", "tiktok_reply_toggle", { enabled: this._tiktokReplyEnabled });
       });
     }
 
-    const chatRecord = root.getElementById("chat-record");
-    if (chatRecord) {
-      chatRecord.addEventListener("click", async () => {
-        await this._goiDichVu("esp32_aibox_media_controller", "chat_record"); 
-        await this._lamMoiEntity(280);
+    const btnClearChat = root.getElementById("btnClearChat");
+    if (btnClearChat) {
+      btnClearChat.addEventListener("click", () => {
+        this._chatHistory = [];
+        this._veGiaoDien();
+      });
+    }
+
+    // Xử lý upload ảnh nền (Base64)
+    const btnChatBackground = root.getElementById("btnChatBackground");
+    const chatBackgroundUpload = root.getElementById("chatBackgroundUpload");
+    if (btnChatBackground && chatBackgroundUpload) {
+      btnChatBackground.addEventListener("click", () => {
+        chatBackgroundUpload.click();
+      });
+
+      chatBackgroundUpload.addEventListener("change", async (ev) => {
+        const file = ev.target.files[0];
+        if (!file || !file.type.startsWith('image/')) return;
+
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const base64 = reader.result.split(',')[1];
+          this._chatBgBase64 = base64;
+          this._veGiaoDien(); // Hiện ảnh ngay lập tức trên UI
+          try {
+            await this._goiDichVu("esp32_aibox_media_controller", "upload_chat_background", { image: base64 });
+          } catch(err) {
+            console.warn("Chưa hỗ trợ upload qua HA CallService", err);
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    const btnRemoveBackground = root.getElementById("btnRemoveBackground");
+    if (btnRemoveBackground) {
+      btnRemoveBackground.addEventListener("click", async () => {
+        this._chatBgBase64 = "";
+        this._veGiaoDien();
+        try {
+          await this._goiDichVu("esp32_aibox_media_controller", "remove_chat_background");
+        } catch(err) {}
       });
     }
 
@@ -537,18 +569,9 @@ export const UIEventsMixin = {
       });
     }
 
-    const chatRefresh = root.getElementById("chat-refresh");
-    if (chatRefresh) {
-      chatRefresh.addEventListener("click", async () => {
-        this._lastChatStateRequestAt = Date.now();
-        this._lastChatHistoryRequestAt = Date.now();
-        await this._goiDichVu("esp32_aibox_media_controller", "chat_get_state");
-        await this._goiDichVu("esp32_aibox_media_controller", "chat_get_history");
-        await this._lamMoiEntity(280);
-      });
-    }
-
-    // BỘ ÂM THANH (System Tab cũ)
+    // =========================================================================
+    // --- BỘ ÂM THANH VÀ ĐÈN (TAB CONTROL & SYSTEM) ---
+    // =========================================================================
     const eqEnabled = root.getElementById("eq-enabled");
     if (eqEnabled) {
       eqEnabled.addEventListener("change", async (ev) => {
@@ -560,7 +583,6 @@ export const UIEventsMixin = {
       });
     }
 
-    // EQ Sliders (Phục vụ cả Tab System cũ và Tab Control Mới)
     root.querySelectorAll("[data-eq-band], [id^='eq-band-ctrl-']").forEach((slider) => {
       const docBand = Math.max(0, Math.round(Number(slider.dataset.eqBand || slider.dataset.idx || 0)));
       slider.addEventListener("input", (ev) => {
@@ -601,7 +623,6 @@ export const UIEventsMixin = {
       slider.addEventListener("blur", () => { setTimeout(() => this._xuLyRenderCho(), 0); });
     });
 
-    // EQ Preset (Phục vụ chung)
     root.querySelectorAll(".eq-preset, .ctrl-eq-preset").forEach((el) => {
       el.addEventListener("click", async () => { 
         await this._apDungEqMau(el.dataset.preset || ""); 
@@ -654,7 +675,6 @@ export const UIEventsMixin = {
       });
     }
 
-    // MAIN LIGHT
     const mainLightEnabled = root.getElementById("sw-light-main"); 
     if (mainLightEnabled) {
       mainLightEnabled.addEventListener("change", async (ev) => {
@@ -709,7 +729,6 @@ export const UIEventsMixin = {
       });
     });
 
-    // EDGE LIGHT
     const edgeEnabled = root.getElementById("sw-light-edge"); 
     if (edgeEnabled) {
       edgeEnabled.addEventListener("change", async (ev) => {
@@ -740,17 +759,11 @@ export const UIEventsMixin = {
       });
     }
 
-    // =========================================================================
-    // --- SỰ KIỆN MỚI CHO CONTROL TAB (CHUYỂN SUB-TAB, STEREO, SURROUND, DAC) ---
-    // =========================================================================
-    
-    // Sub-tabs Control
     root.getElementById("btn-tab-eq")?.addEventListener("click", () => { this._audioEngineTab = "eq"; this._veGiaoDien(); });
     root.getElementById("btn-tab-surround")?.addEventListener("click", () => { this._audioEngineTab = "surround"; this._veGiaoDien(); });
     root.getElementById("btn-tab-light-main")?.addEventListener("click", () => { this._lightingTab = "main"; this._veGiaoDien(); });
     root.getElementById("btn-tab-light-edge")?.addEventListener("click", () => { this._lightingTab = "edge"; this._veGiaoDien(); });
 
-    // LED Chờ
     root.getElementById("sw-led-cho")?.addEventListener("change", async (ev) => {
       this._ledChoEnabled = ev.target.checked;
       try {
@@ -759,7 +772,6 @@ export const UIEventsMixin = {
       } catch (err) {}
     });
 
-    // Stereo Mode
     root.getElementById("sw-stereo-main")?.addEventListener("change", async (ev) => {
       this._stereoEnabled = ev.target.checked;
       try {
@@ -782,7 +794,6 @@ export const UIEventsMixin = {
       } catch (err) {}
     });
 
-    // Surround
     const updateSurroundParams = async () => {
       const w = this._surroundW !== undefined && !isNaN(this._surroundW) ? this._surroundW : 40;
       const p = this._surroundP !== undefined && !isNaN(this._surroundP) ? this._surroundP : 30;
@@ -790,11 +801,11 @@ export const UIEventsMixin = {
 
       const clamp = (val, min, max) => Math.min(Math.max(val, min), max);
       const bands = [
-          -Math.round(s * 8),       // 60Hz
-          -Math.round(w * 7),       // 230Hz
-          -Math.round(w * 9),       // 910Hz
-          Math.round(w * 5 + p * 6),  // 3.6k
-          Math.round(w * 6 + p * 8)   // 14k
+          -Math.round(s * 8),      
+          -Math.round(w * 7),      
+          -Math.round(w * 9),      
+          Math.round(w * 5 + p * 6),  
+          Math.round(w * 6 + p * 8)   
       ];
 
       const gain = clamp(Math.round(s * 6 + w * 2), 0, 3000);
@@ -819,9 +830,7 @@ export const UIEventsMixin = {
           await this._goiDichVu("esp32_aibox_media_controller", "set_loudness_gain", { gain: gain });
           
           await this._lamMoiEntity(250, 2);
-      } catch (err) {
-          console.error("Surround Error:", err);
-      }
+      } catch (err) {}
     };
 
     const surW = root.getElementById("sur-w");
@@ -863,7 +872,6 @@ export const UIEventsMixin = {
       updateSurroundParams(); this._veGiaoDien();
     });
 
-    // DAC (Dải trung/cao)
     const dacL = root.getElementById("slider-dac-l");
     if(dacL) {
         dacL.addEventListener("input", (e) => {
@@ -874,11 +882,9 @@ export const UIEventsMixin = {
         dacL.addEventListener("change", async (e) => {
             this._dacVolL = parseInt(e.target.value) || 231;
             try {
-                // Thử gọi chuẩn service (set_mixer_value)
                 await this._goiDichVu("media_player", "set_mixer_value", { control_name: 'DAC Digital Volume L', value: this._dacVolL.toString() });
                 await this._lamMoiEntity(250, 2);
             } catch (err) {
-                // Fallback nếu component dùng chuẩn custom send_command
                 try {
                     await this._goiDichVu("esp32_aibox_media_controller", "send_command", { type: 'sends', list: [{type: 'setMixerValue', controlName: 'DAC Digital Volume L', value: this._dacVolL.toString()}, {type: 'get_eq_config'}] });
                 } catch (e2) {}

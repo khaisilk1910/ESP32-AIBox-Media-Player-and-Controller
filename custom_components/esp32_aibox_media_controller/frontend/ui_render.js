@@ -43,6 +43,17 @@ export const UIRenderMixin = {
     }).join("");
   },
 
+  _getSliderBackgroundStyle(val, min, max, isVertical = false) {
+    const minNum = Number(min) || 0;
+    const maxNum = Number(max) || 100;
+    const valNum = Number(val) || 0;
+    const percentage = Math.max(0, Math.min(100, ((valNum - minNum) / (maxNum - minNum)) * 100));
+    if (isVertical) {
+      return `linear-gradient(to top, var(--accent) ${percentage}%, rgba(0,0,0,0.3) ${percentage}%)`;
+    }
+    return `linear-gradient(to right, var(--accent) ${percentage}%, rgba(0,0,0,0.3) ${percentage}%)`;
+  },
+
   _veTabMedia(stateObj) {
     const playback = this._thongTinPhat();
     const playbackState = this._layTrangThaiHienThiPhat(playback, stateObj);
@@ -209,7 +220,6 @@ export const UIRenderMixin = {
   },
 
   _veTabDieuKhien() { 
-    // Bảo vệ các biến khỏi lỗi NaN nếu chưa khởi tạo
     const wVal = this._surroundW !== undefined && !isNaN(this._surroundW) ? this._surroundW : 40;
     const pVal = this._surroundP !== undefined && !isNaN(this._surroundP) ? this._surroundP : 30;
     const sVal = this._surroundS !== undefined && !isNaN(this._surroundS) ? this._surroundS : 10;
@@ -222,9 +232,12 @@ export const UIRenderMixin = {
     const edgeIntVal = this._edgeLightIntensity !== undefined && !isNaN(this._edgeLightIntensity) ? this._edgeLightIntensity : 50;
     const wakeSensVal = this._wakeSensitivity !== undefined && !isNaN(this._wakeSensitivity) ? this._wakeSensitivity : 0.95;
 
-    const renderSwitch = (id, label, isChecked) => `
-      <div class="label-line" style="margin-top: 6px;">
-        <strong style="color: var(--text);">${label}</strong>
+    const renderSwitch = (id, label, isChecked, sublabel = "") => `
+      <div class="neo-row">
+        <div>
+          <div class="neo-label">${label}</div>
+          ${sublabel ? `<div class="neo-sublabel">${sublabel}</div>` : ''}
+        </div>
         <label class="switch">
           <input id="${id}" type="checkbox" ${isChecked ? "checked" : ""} />
           <span class="slider"></span>
@@ -232,124 +245,197 @@ export const UIRenderMixin = {
       </div>
     `;
     
-    const renderSlider = (id, min, max, step, val, displayVal, label, unit = "") => `
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <span style="font-size: 12px; color: var(--muted); min-width: 80px;">${label}</span>
-        <input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${val}" style="flex: 1; height: 4px;" />
-        <strong id="val-${id}" style="font-size: 12px; color: var(--accent); min-width: 45px; text-align: right;">${displayVal}${unit}</strong>
+    const renderSlider = (id, min, max, step, val, displayVal, label, unit = "") => {
+      const bgStyle = this._getSliderBackgroundStyle(val, min, max, false);
+      return `
+      <div class="neo-slider-group">
+        <span class="neo-label" style="min-width: 85px;">${label}</span>
+        <input id="${id}" class="neo-slider styled-slider" type="range" min="${min}" max="${max}" step="${step}" value="${val}" style="background: ${bgStyle};" oninput="this.style.background = 'linear-gradient(to right, var(--accent) ' + ((this.value - this.min) / (this.max - this.min)) * 100 + '%, rgba(0,0,0,0.3) ' + ((this.value - this.min) / (this.max - this.min)) * 100 + '%)'" />
+        <span id="val-${id}" class="neo-value">${displayVal}${unit}</span>
       </div>
-    `;
+      `;
+    };
 
     const eqBandsHtml = (this._eqBands || [0,0,0,0,0]).map((val, idx) => {
       const safeVal = val !== undefined && !isNaN(val) ? val : 0;
+      const bgStyle = this._getSliderBackgroundStyle(safeVal, -1500, 1500, true);
       return `
-      <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
-        <span id="val-eq-${idx}" style="font-size: 10px; color: var(--accent); min-height: 12px; font-weight: bold;">${safeVal}</span>
-        <input type="range" id="eq-band-ctrl-${idx}" data-idx="${idx}" min="-1500" max="1500" step="10" value="${safeVal}" style="appearance: slider-vertical; width: 14px; height: 100px; accent-color: var(--accent);" orient="vertical">
-        <span style="font-size: 10px; color: var(--muted);">${EQ_BAND_LABELS[idx]}</span>
+      <div class="eq-col">
+        <span id="val-eq-${idx}" class="eq-val">${safeVal}</span>
+        <input type="range" id="eq-band-ctrl-${idx}" data-idx="${idx}" min="-1500" max="1500" step="10" value="${safeVal}" class="eq-slider-vert styled-slider" orient="vertical" style="background: ${bgStyle};" oninput="this.style.background = 'linear-gradient(to top, var(--accent) ' + ((this.value - this.min) / (this.max - this.min)) * 100 + '%, rgba(0,0,0,0.3) ' + ((this.value - this.min) / (this.max - this.min)) * 100 + '%)'">
+        <span class="eq-label">${EQ_BAND_LABELS[idx]}</span>
       </div>
     `}).join("");
 
     return `
-      <section class="panel">
-        <h3 class="section-title"><ha-icon icon="mdi:tune-variant"></ha-icon> Control Center</h3>
-        
-        <div class="tile">
-          <div style="border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 12px;">
-            ${renderSwitch('sw-wake-word', 'Từ khóa đánh thức', this._wakeEnabled)}
-            <div class="small" style="margin-top: 4px;">Độ nhạy đề xuất: 0.95-0.99</div>
-            ${renderSlider('wake-sensitivity', 0, 1, 0.01, wakeSensVal, wakeSensVal.toFixed(2), 'Độ nhạy')}
-          </div>
-          ${renderSwitch('ai-enabled', 'Chống điếc AI (Anti-deaf)', this._antiDeafEnabled)}
-          ${renderSwitch('sw-dlna', 'DLNA', this._dlnaEnabled)}
-          ${renderSwitch('sw-airplay', 'AirPlay', this._airplayEnabled)}
-          ${renderSwitch('sw-bluetooth', 'Bluetooth', this._bluetoothEnabled)}
-          ${renderSwitch('sw-led-cho', 'Đèn LED Chờ (Nháy theo nhạc)', this._ledChoEnabled)}
-          
-          <div style="border-top: 1px solid var(--line); margin: 12px 0 8px;"></div>
-          
-          ${renderSwitch('sw-stereo-main', 'Stereo Mode - Loa Mẹ', this._stereoEnabled)}
-          ${renderSwitch('sw-stereo-sub', 'Stereo Mode - Loa Con', this._stereoReceiver)}
-          <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
-            <span style="font-size: 12px; color: var(--muted);">Sync Delay (ms):</span>
-            <input type="number" id="stereo-delay-input" value="${this._stereoDelay || 0}" style="background: var(--input-bg); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 4px; width: 60px; text-align: center; font-size: 12px;">
-            <button id="btn-save-delay" style="background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; font-weight: bold;">Lưu</button>
-          </div>
-        </div>
-
-        <div class="tile">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <strong style="color: var(--text); font-size: 14px;">Audio Engine</strong>
-            <div style="display: flex; gap: 4px; background: var(--input-bg); padding: 4px; border-radius: 8px;">
-               <button id="btn-tab-eq" class="mini-btn hover-pop ${this._audioEngineTab === 'eq' ? 'active' : ''}" style="border:none;">Equalizer</button>
-               <button id="btn-tab-surround" class="mini-btn hover-pop ${this._audioEngineTab === 'surround' ? 'active' : ''}" style="border:none;">Surround</button>
-            </div>
-          </div>
-
-          <div id="content-eq" style="display: ${this._audioEngineTab === 'eq' ? 'block' : 'none'};">
-            <div style="display: flex; justify-content: space-around; height: 135px; margin-bottom: 12px;">
-               ${eqBandsHtml}
-            </div>
-            <div class="actions-inline eq-presets" style="justify-content: center; border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 12px;">
-              <button class="mini-btn ctrl-eq-preset hover-pop" data-preset="flat">Phẳng</button>
-              <button class="mini-btn ctrl-eq-preset hover-pop" data-preset="bass">Bass</button>
-              <button class="mini-btn ctrl-eq-preset hover-pop" data-preset="vocal">Vocal</button>
-              <button class="mini-btn ctrl-eq-preset hover-pop" data-preset="rock">Rock</button>
-              <button class="mini-btn ctrl-eq-preset hover-pop" data-preset="jazz">Jazz</button>
-            </div>
-            ${renderSwitch('sw-bass', 'Tăng cường bass', this._bassEnabled)}
-            <div style="margin-bottom: 12px;">${renderSlider('slider-bass-strength', 0, 1000, 10, bassStrengthVal, bassStrengthVal / 10, 'Strength', '%')}</div>
+      <section class="panel" style="padding-top: 4px;">
+        <style>
+            .neo-card { background: rgba(30, 41, 59, 0.4); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+            .neo-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 16px; display: flex; align-items: center; gap: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+            .neo-title ha-icon { color: var(--accent); }
+            .neo-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+            .neo-row:last-child { margin-bottom: 0; }
+            .neo-label { font-size: 13px; color: var(--text); font-weight: 600; }
+            .neo-sublabel { font-size: 11px; color: var(--muted); margin-top: 4px; }
+            .neo-slider-group { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+            .styled-slider { -webkit-appearance: none; appearance: none; flex: 1; height: 6px; border-radius: 3px; outline: none; cursor: pointer; transition: background 0.1s ease; }
+            .styled-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.3); border: 2px solid var(--accent); cursor: pointer; }
+            .styled-slider::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.3); border: 2px solid var(--accent); cursor: pointer; }
             
-            ${renderSwitch('sw-loudness', 'Độ lớn âm thanh', this._loudnessEnabled)}
-            <div style="margin-bottom: 12px;">${renderSlider('slider-loudness-gain', -3000, 3000, 10, loudnessGainVal, (loudnessGainVal / 100).toFixed(1), 'Gain', ' dB')}</div>
+            .neo-value { font-size: 11px; color: var(--accent); font-weight: 700; min-width: 54px; text-align: center; background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 6px; font-family: monospace; }
+            .neo-btn-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(55px, 1fr)); gap: 8px; }
+            .neo-btn { background: rgba(255,255,255,0.05); border: 1px solid var(--line); border-radius: 8px; color: var(--text); font-size: 11px; font-weight: 600; padding: 8px 4px; cursor: pointer; transition: all 0.2s; display: flex; justify-content: center; align-items: center; }
+            .neo-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+            .neo-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 2px 8px rgba(var(--accent), 0.4); }
+            .neo-subtabs { display: flex; background: rgba(0,0,0,0.25); padding: 4px; border-radius: 12px; margin-bottom: 16px; border: 1px solid var(--line); }
+            .neo-subtab { flex: 1; padding: 8px 0; text-align: center; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; transition: 0.3s; color: var(--muted); border: none; background: transparent; display: flex; justify-content: center; align-items: center; gap: 6px;}
+            .neo-subtab:hover { color: var(--text); }
+            .neo-subtab.active { background: var(--bg-card); color: var(--text); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+            .divider { height: 1px; background: var(--line); margin: 16px 0; border: none; }
+            .eq-container { display: flex; justify-content: space-around; align-items: flex-end; height: 140px; margin-bottom: 20px; background: rgba(0,0,0,0.15); padding: 12px; border-radius: 12px; border: 1px inset var(--line); }
+            .eq-col { display: flex; flex-direction: column; align-items: center; gap: 8px; height: 100%; }
+            .eq-val { font-size: 10px; color: var(--accent); font-weight: 700; font-family: monospace; min-height: 12px;}
+            
+            .eq-slider-vert { -webkit-appearance: none; appearance: none; width: 6px; height: 80px; border-radius: 3px; outline: none; cursor: pointer; transition: background 0.1s ease; }
+            .eq-slider-vert::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.3); border: 2px solid var(--accent); cursor: pointer; }
+            .eq-slider-vert::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.3); border: 2px solid var(--accent); cursor: pointer; }
+            .eq-slider-vert[orient="vertical"] { writing-mode: bt-lr; -webkit-appearance: slider-vertical; }
+            
+            .eq-label { font-size: 10px; color: var(--muted); font-weight: 600;}
+            .delay-input-group { display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.2); padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); }
+            .delay-input { background: transparent; border: none; color: var(--accent); font-weight: 700; width: 50px; text-align: center; font-family: monospace; outline: none; }
+            .delay-btn { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 4px 12px; font-size: 11px; font-weight: 700; cursor: pointer; transition: 0.2s; }
+            .delay-btn:hover { filter: brightness(1.1); }
+        </style>
 
-            <div style="border-top: 1px solid var(--line); padding-top: 12px;">
-               <span style="font-size: 12px; font-weight: bold; color: var(--text); display: block; margin-bottom: 8px;">Dải Trung-Cao</span>
-               ${renderSlider('slider-dac-l', 211, 251, 1, dacLVal, (dacLVal - 231 > 0 ? '+' : '') + (dacLVal - 231), 'Âm trầm', ' dB')}
-               <div style="margin-top: 8px;">${renderSlider('slider-dac-r', 211, 251, 1, dacRVal, (dacRVal - 231 > 0 ? '+' : '') + (dacRVal - 231), 'Âm cao', ' dB')}</div>
-            </div>
-          </div>
-
-          <div id="content-surround" style="display: ${this._audioEngineTab === 'surround' ? 'block' : 'none'};">
-             ${renderSlider('sur-w', 0, 100, 1, wVal, wVal, 'WIDTH')}
-             <div style="margin: 12px 0;">${renderSlider('sur-p', 0, 100, 1, pVal, pVal, 'PRESENCE')}</div>
-             ${renderSlider('sur-s', 0, 100, 1, sVal, sVal, 'SPACE')}
-             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px;">
-                 <button class="mini-btn hover-pop" id="btn-sur-cinema" style="padding: 10px; border-color: var(--accent);">Cinema</button>
-                 <button class="mini-btn hover-pop" id="btn-sur-wide" style="padding: 10px; border-color: var(--accent);">Wide Space</button>
-             </div>
-          </div>
+        <div class="neo-card">
+            <div class="neo-title"><ha-icon icon="mdi:microphone-outline"></ha-icon> Trợ lý & Đánh thức</div>
+            ${renderSwitch('sw-wake-word', 'Từ khóa đánh thức', this._wakeEnabled, 'Độ nhạy đề xuất: 0.95 - 0.99')}
+            <div style="margin-top: 12px;"></div>
+            ${renderSlider('wake-sensitivity', 0, 1, 0.01, wakeSensVal, wakeSensVal.toFixed(2), 'Độ nhạy')}
+            <hr class="divider">
+            ${renderSwitch('ai-enabled', 'Chống điếc AI (Anti-deaf)', this._antiDeafEnabled)}
         </div>
 
-        <div class="tile">
-          <div style="display: flex; gap: 4px; background: var(--input-bg); padding: 4px; border-radius: 8px; margin-bottom: 12px;">
-             <button id="btn-tab-light-main" class="mini-btn hover-pop ${this._lightingTab === 'main' ? 'active' : ''}" style="flex:1; border:none;">Đèn Chính (RGB)</button>
-             <button id="btn-tab-light-edge" class="mini-btn hover-pop ${this._lightingTab === 'edge' ? 'active' : ''}" style="flex:1; border:none;">Đèn Viền (Edge)</button>
-          </div>
+        <div class="neo-card">
+            <div class="neo-title"><ha-icon icon="mdi:cast-variant"></ha-icon> Kết Nối Không Dây</div>
+            ${renderSwitch('sw-dlna', 'DLNA', this._dlnaEnabled)}
+            ${renderSwitch('sw-airplay', 'AirPlay', this._airplayEnabled)}
+            ${renderSwitch('sw-bluetooth', 'Bluetooth', this._bluetoothEnabled)}
+        </div>
 
-          <div id="content-light-main" style="display: ${this._lightingTab === 'main' ? 'block' : 'none'};">
-             ${renderSwitch('sw-light-main', 'Trạng thái Đèn chính', this._mainLightEnabled)}
-             <div style="margin: 12px 0;">${renderSlider('slider-light-bright', 1, 200, 1, mainBrightVal, mainBrightVal, 'Cường độ')}</div>
-             ${renderSlider('slider-light-speed', 1, 100, 1, mainSpeedVal, mainSpeedVal, 'Tốc độ')}
-             
-             <span style="font-size: 12px; font-weight: bold; color: var(--text); margin-top: 16px; display: block;">Chế độ Đèn</span>
-             <div class="actions-inline" style="margin-top: 8px;">
-                 ${[[0, "Mặc định"], [1, "Xoay vòng"], [2, "Nháy 1"], [3, "Đơn sắc"], [4, "Nháy 2"], [7, "Hơi thở"]].map(([m, l]) => 
-                   `<button class="mini-btn light-mode-btn hover-pop ${this._mainLightMode === m ? 'active' : ''}" data-mode="${m}">${l}</button>`
-                 ).join("")}
-             </div>
-          </div>
+        <div class="neo-card">
+            <div class="neo-title"><ha-icon icon="mdi:speaker-multiple"></ha-icon> Stereo Mode</div>
+            ${renderSwitch('sw-stereo-main', 'Loa Mẹ (Master)', this._stereoEnabled)}
+            ${renderSwitch('sw-stereo-sub', 'Loa Con (Slave)', this._stereoReceiver)}
+            <div class="neo-row" style="margin-top: 12px;">
+                <span class="neo-label">Độ trễ đồng bộ (Sync Delay)</span>
+                <div class="delay-input-group">
+                    <input type="number" id="stereo-delay-input" class="delay-input" value="${this._stereoDelay || 0}">
+                    <span class="neo-sublabel" style="margin-top: 0;">ms</span>
+                    <button id="btn-save-delay" class="delay-btn">LƯU</button>
+                </div>
+            </div>
+        </div>
 
-          <div id="content-light-edge" style="display: ${this._lightingTab === 'edge' ? 'block' : 'none'};">
-             ${renderSwitch('sw-light-edge', 'Trạng thái Đèn viền', this._edgeLightEnabled)}
-             <div style="margin-top: 12px;">${renderSlider('slider-edge-intensity', 0, 100, 1, edgeIntVal, edgeIntVal, 'Cường độ', '%')}</div>
-          </div>
+        <div class="neo-card">
+            <div class="neo-title"><ha-icon icon="mdi:equalizer"></ha-icon> Audio Engine</div>
+            <div class="neo-subtabs">
+                <button id="btn-tab-eq" class="neo-subtab ${this._audioEngineTab === 'eq' ? 'active' : ''}"><ha-icon icon="mdi:tune" style="--mdc-icon-size: 16px;"></ha-icon> Equalizer</button>
+                <button id="btn-tab-surround" class="neo-subtab ${this._audioEngineTab === 'surround' ? 'active' : ''}"><ha-icon icon="mdi:surround-sound" style="--mdc-icon-size: 16px;"></ha-icon> Surround</button>
+            </div>
+
+            <div id="content-eq" style="display: ${this._audioEngineTab === 'eq' ? 'block' : 'none'};">
+                <div class="eq-container">
+                    ${eqBandsHtml}
+                </div>
+                <div class="neo-btn-group" style="margin-bottom: 20px;">
+                    <button class="neo-btn ctrl-eq-preset" data-preset="flat">Phẳng</button>
+                    <button class="neo-btn ctrl-eq-preset" data-preset="bass">Bass</button>
+                    <button class="neo-btn ctrl-eq-preset" data-preset="vocal">Vocal</button>
+                    <button class="neo-btn ctrl-eq-preset" data-preset="rock">Rock</button>
+                    <button class="neo-btn ctrl-eq-preset" data-preset="jazz">Jazz</button>
+                </div>
+
+                ${renderSwitch('sw-bass', 'Tăng cường Bass', this._bassEnabled)}
+                <div style="margin: 12px 0 20px;">
+                    ${renderSlider('slider-bass-strength', 0, 1000, 10, bassStrengthVal, bassStrengthVal / 10, 'Sức mạnh', '%')}
+                </div>
+
+                ${renderSwitch('sw-loudness', 'Độ lớn âm thanh (Loudness)', this._loudnessEnabled)}
+                <div style="margin: 12px 0 20px;">
+                    ${renderSlider('slider-loudness-gain', -3000, 3000, 10, loudnessGainVal, (loudnessGainVal / 100).toFixed(1), 'Khuếch đại', ' dB')}
+                </div>
+
+                <div style="background: rgba(0,0,0,0.15); padding: 12px; border-radius: 12px; border: 1px solid var(--line);">
+                    <div class="neo-label" style="margin-bottom: 12px; color: var(--muted);"><ha-icon icon="mdi:chart-bell-curve" style="--mdc-icon-size: 16px; vertical-align: text-bottom; margin-right: 4px;"></ha-icon> Dải Trung - Cao (DAC)</div>
+                    ${renderSlider('slider-dac-l', 211, 251, 1, dacLVal, (dacLVal - 231 > 0 ? '+' : '') + (dacLVal - 231), 'Âm trầm', ' dB')}
+                    <div style="margin-top: 12px;">
+                        ${renderSlider('slider-dac-r', 211, 251, 1, dacRVal, (dacRVal - 231 > 0 ? '+' : '') + (dacRVal - 231), 'Âm cao', ' dB')}
+                    </div>
+                </div>
+            </div>
+
+            <div id="content-surround" style="display: ${this._audioEngineTab === 'surround' ? 'block' : 'none'};">
+                <div style="background: rgba(0,0,0,0.15); padding: 16px; border-radius: 12px; border: 1px solid var(--line); margin-bottom: 16px;">
+                    ${renderSlider('sur-w', 0, 100, 1, wVal, wVal, 'Chiều rộng (W)')}
+                    <div style="margin: 16px 0;">
+                        ${renderSlider('sur-p', 0, 100, 1, pVal, pVal, 'Hiện diện (P)')}
+                    </div>
+                    ${renderSlider('sur-s', 0, 100, 1, sVal, sVal, 'Không gian (S)')}
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <button class="neo-btn" id="btn-sur-cinema" style="padding: 12px;"><ha-icon icon="mdi:movie-open" style="--mdc-icon-size: 16px; margin-right: 6px;"></ha-icon> Cinema</button>
+                    <button class="neo-btn" id="btn-sur-wide" style="padding: 12px;"><ha-icon icon="mdi:panorama" style="--mdc-icon-size: 16px; margin-right: 6px;"></ha-icon> Wide Space</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="neo-card">
+            <div class="neo-title"><ha-icon icon="mdi:led-strip-variant"></ha-icon> Điều Khiển Đèn</div>
+            
+            ${renderSwitch('sw-led-cho', 'Đèn LED chờ (Nháy theo nhạc)', this._ledChoEnabled)}
+            <hr class="divider">
+
+            <div class="neo-subtabs">
+                <button id="btn-tab-light-main" class="neo-subtab ${this._lightingTab === 'main' ? 'active' : ''}"><ha-icon icon="mdi:lightbulb-on" style="--mdc-icon-size: 16px;"></ha-icon> Đèn Chính</button>
+                <button id="btn-tab-light-edge" class="neo-subtab ${this._lightingTab === 'edge' ? 'active' : ''}"><ha-icon icon="mdi:border-outside" style="--mdc-icon-size: 16px;"></ha-icon> Đèn Viền</button>
+            </div>
+
+            <div id="content-light-main" style="display: ${this._lightingTab === 'main' ? 'block' : 'none'};">
+                ${renderSwitch('sw-light-main', 'Trạng thái Đèn Chính', this._mainLightEnabled)}
+                <div style="margin: 16px 0;">
+                    ${renderSlider('slider-light-bright', 1, 200, 1, mainBrightVal, mainBrightVal, 'Độ sáng')}
+                </div>
+                <div style="margin-bottom: 20px;">
+                    ${renderSlider('slider-light-speed', 1, 100, 1, mainSpeedVal, mainSpeedVal, 'Tốc độ')}
+                </div>
+                
+                <div class="neo-label" style="margin-bottom: 10px; color: var(--muted);">Chế độ hiệu ứng</div>
+                <div class="neo-btn-group">
+                    ${[[0, "Mặc định"], [1, "Xoay vòng"], [2, "Nháy 1"], [3, "Đơn sắc"], [4, "Nháy 2"], [7, "Hơi thở"]].map(([m, l]) => 
+                        `<button class="neo-btn light-mode-btn ${this._mainLightMode === m ? 'active' : ''}" data-mode="${m}">${l}</button>`
+                    ).join("")}
+                </div>
+            </div>
+
+            <div id="content-light-edge" style="display: ${this._lightingTab === 'edge' ? 'block' : 'none'};">
+                ${renderSwitch('sw-light-edge', 'Trạng thái Đèn Viền', this._edgeLightEnabled)}
+                <div style="margin-top: 16px;">
+                    ${renderSlider('slider-edge-intensity', 0, 100, 1, edgeIntVal, edgeIntVal, 'Cường độ', '%')}
+                </div>
+            </div>
         </div>
       </section>
     `;
   },
 
   _veTabChat() { 
+    // Kiểm tra xem có ảnh nền hay không để chọn class bong bóng chat tương ứng
+    const hasBg = !!this._chatBgBase64;
+    const userBubbleClass = hasBg ? 'user-bubble-transparent' : 'user-bubble';
+    const aiBubbleClass = hasBg ? 'ai-bubble-transparent' : 'ai-bubble';
+
     const historyMarkup = this._chatHistory.length === 0 
       ? `<div class="chat-empty empty" style="margin: auto; text-align: center; border: none; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px);"><strong>Chưa có lịch sử chat</strong></div>` 
       : this._chatHistory.map(item => {
@@ -357,83 +443,100 @@ export const UIRenderMixin = {
           if (isUser) {
               return `
               <div class="chat-msg-row user" style="position: relative; z-index: 10;">
-                 <div class="chat-bubble user-bubble">
+                 <div class="chat-bubble ${userBubbleClass}">
                     ${this._maHoaHtml(item.content || item.message || "")}
                  </div>
               </div>`;
           } else {
               return `
               <div class="chat-msg-row ai" style="position: relative; z-index: 10;">
-                 <div class="chat-bubble ai-bubble">
+                 <div class="chat-bubble ${aiBubbleClass}">
                     ${this._maHoaHtml(item.content || item.message || "")}
                  </div>
               </div>`;
           }
         }).join("");
         
-    // Lấy model hiện tại từ local storage hoặc Live2D Manager
     let currentModel = 'hiyori';
     try { currentModel = localStorage.getItem('live2d_model_id') || 'hiyori'; } catch(e) {}
     if (this._live2dManager && this._live2dManager.currentModelId) {
         currentModel = this._live2dManager.currentModelId;
     }
 
-    // Danh sách Model
     const models = [
-        { id: 'hiyori', name: 'Hiyori (Nhẹ nhất, khuyên dùng)' },
-        { id: 'miku', name: 'Hatsune Miku' },
+        { id: 'hiyori', name: 'Hiyori' },
+        { id: 'miku', name: 'Miku' },
         { id: 'haru', name: 'Haru' },
-        { id: 'wanko', name: 'Wanko (Chó cưng)' },
+        { id: 'wanko', name: 'Wanko' },
         { id: 'shizuku', name: 'Shizuku' },
         { id: 'tororo', name: 'Tororo' },
         { id: 'hijiki', name: 'Hijiki' },
         { id: 'ryou', name: 'Ryou' },
         { id: 'chitose', name: 'Chitose' },
-        { id: 'nicole', name: 'Nicole (Không hỗ trợ mobile)' },
-        { id: 'changli', name: 'Changli (Không hỗ trợ mobile)' }
+        { id: 'nicole', name: 'Nicole' },
+        { id: 'changli', name: 'Changli' }
     ];
 
     const isMobile = window.innerWidth <= 768;
 
+    // Giao diện chính xác như Web UI cũ
     return `
       <section class="panel panel-chat" style="padding: 0;">
-        <div class="chat-container" style="position: relative;">
-          <div id="live2d-wrapper" style="position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; z-index: 1; opacity: 0.85;">
-            </div>
+        <div class="chat-container-ui">
+          
+          <img class="chat-bg-img" style="display: ${hasBg ? 'block' : 'none'};" src="${hasBg ? 'data:image/jpeg;base64,' + this._chatBgBase64 : ''}" alt="">
 
-          <div class="chat-shell-header" style="position: relative; z-index: 20; border-bottom: 1px solid var(--line); padding: 12px; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);">
+          <div id="live2d-wrapper" class="live2d-stage"></div>
+
+          <div class="chat-ui-header">
+            <span style="font-size: 12px; font-weight: 700; color: #cbd5e1; display: flex; align-items: center;">
+                <ha-icon icon="mdi:chat-processing" style="color: #818cf8; --mdc-icon-size: 16px; margin-right: 8px;"></ha-icon>
+                Trò chuyện
+            </span>
             <div style="display: flex; align-items: center; gap: 8px;">
-              <ha-icon icon="mdi:robot-outline" style="color: var(--accent);"></ha-icon>
-              <strong style="font-size: 14px; color: var(--text);">Trợ lý AI</strong>
-            </div>
-            <div style="display: flex; gap: 8px;">
-              <select id="chat-live2d-select" style="background: var(--bg-tile); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 11px; outline: none; cursor: pointer; max-width: 140px;">
-                ${models.map(m => {
-                  const disabled = isMobile && (m.id === 'nicole' || m.id === 'changli') ? 'disabled' : '';
-                  const selected = m.id === currentModel ? 'selected' : '';
-                  return `<option value="${m.id}" ${disabled} ${selected}>${m.name}</option>`;
-                }).join("")}
-              </select>
-              <button id="chat-refresh" class="mini-btn hover-pop" style="background: transparent; border: 1px solid var(--line); padding: 4px 8px;"><ha-icon icon="mdi:refresh" style="--mdc-icon-size: 14px; margin-right: 4px;"></ha-icon> Làm mới</button>
+                <select id="chat-live2d-select" class="live2d-select">
+                    ${models.map(m => `<option value="${m.id}" ${m.id === currentModel ? 'selected' : ''}>${m.name}</option>`).join("")}
+                </select>
+                <input type="file" id="chatBackgroundUpload" accept="image/*" style="display: none;">
+                <button id="btnChatBackground" class="chat-header-btn" title="Đổi ảnh nền" style="display: ${hasBg ? 'none' : 'block'};">
+                    <ha-icon icon="mdi:image"></ha-icon>
+                </button>
+                <button id="btnRemoveBackground" class="chat-header-btn" title="Xóa ảnh nền" style="display: ${hasBg ? 'block' : 'none'};">
+                    <ha-icon icon="mdi:image-off"></ha-icon>
+                </button>
+                <button id="btnClearChat" class="chat-header-btn" title="Xóa lịch sử">
+                    <ha-icon icon="mdi:trash-can"></ha-icon>
+                </button>
             </div>
           </div>
 
-          <div class="chat-messages chat-shell-history" id="chat-messages-container" style="position: relative; z-index: 10;">
+          <div class="chat-ui-messages" id="chat-messages-container">
             ${historyMarkup}
           </div>
 
-          <div class="chat-footer" style="position: relative; z-index: 20; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(10px);">
-            <div class="chat-buttons">
-               <button id="chat-stop-speak" class="chat-btn btn-red"><ha-icon icon="mdi:stop-circle"></ha-icon> Dừng nói</button>
-               <button id="chat-record" class="chat-btn btn-blue"><ha-icon icon="mdi:microphone"></ha-icon> Ghi âm</button>
-               <button id="chat-wakeup" class="chat-btn btn-purple"><ha-icon icon="mdi:account-voice"></ha-icon> T.Khóa Đ.Thức</button>
-               <button id="chat-testmic" class="chat-btn btn-slate"><ha-icon icon="mdi:waveform"></ha-icon> Test Mic</button>
+          <div class="chat-ui-footer">
+            <div style="display: flex; gap: 8px;">
+                <input type="text" id="chatInput" placeholder="Nhập tin nhắn..." value="${this._maHoaHtml(this._chatInput)}" class="chat-ui-input">
+                <button id="chat-send" class="chat-ui-send-btn shadow-green">
+                    <ha-icon icon="mdi:send"></ha-icon>
+                </button>
             </div>
-            <div class="chat-input-row">
-               <input id="chat-input" class="text-input chat-composer-input" placeholder="Nhập tin nhắn..." value="${this._maHoaHtml(this._chatInput)}" style="border-radius: 8px; height: 44px; flex: 1; background: rgba(0,0,0,0.4);" />
-               <button id="chat-send" class="chat-send-btn hover-scale"><ha-icon icon="mdi:send"></ha-icon></button>
+            <div style="display: flex; gap: 8px;">
+                <button id="btnWakeUp" class="chat-ui-action-btn accent-gradient flex-1 shadow-indigo">
+                    <ha-icon icon="mdi:microphone" style="--mdc-icon-size: 14px; margin-right: 4px;"></ha-icon>Wake Up
+                </button>
+                <button id="btnTestMic" class="chat-ui-action-btn bg-purple shadow-purple">
+                    <ha-icon icon="mdi:waveform" style="--mdc-icon-size: 14px; margin-right: 4px;"></ha-icon>Test Mic
+                </button>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="btnTiktokReply" class="chat-ui-action-btn flex-1 ${this._tiktokReplyEnabled ? 'bg-green border-green shadow-green' : 'bg-slate border-slate'}">
+                    <ha-icon icon="mdi:video" style="--mdc-icon-size: 14px; margin-right: 4px;"></ha-icon>
+                    <span id="tiktokReplyText">TikTok Reply: ${this._tiktokReplyEnabled ? 'ON' : 'OFF'}</span>
+                </button>
             </div>
           </div>
+
         </div>
       </section>
     `;
@@ -837,10 +940,6 @@ export const UIRenderMixin = {
         .text-input { flex: 1; min-width: 0; height: 40px; border-radius: 12px; border: 1px solid var(--line); background: var(--input-bg); color: var(--text); padding: 8px 12px; font-size: 14px; outline: none; transition: border-color 0.3s, box-shadow 0.3s, background 0.3s; }
         .text-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--line); }
 
-        .label-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; color: var(--text); font-size: 13px; }
-        .small { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
-        input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer; }
-
         .results { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px; padding: 0 10px 12px; max-height: 380px; overflow: auto; overflow-x: hidden; scroll-behavior: smooth; }
         .empty { border: 1px dashed var(--line); border-radius: 12px; padding: 14px; color: var(--muted); text-align: center; font-size: 13px; grid-column: 1 / -1; }
         .result-item { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 14px; padding: 8px 10px; background: var(--bg-tile); width: 100%; box-sizing: border-box; min-height: 66px; }
@@ -897,27 +996,50 @@ export const UIRenderMixin = {
         .danger-btn { width: 100%; min-height: 40px; border-radius: 12px; border: 1px solid #ef4444; background: transparent; color: #ef4444; font-size: 14px; font-weight: 800; display: inline-flex; gap: 8px; align-items: center; justify-content: center; cursor: pointer; }
         .danger-btn:hover { background: #ef4444; color: #fff; }
 
-        /* --- CSS CHO TAB CHAT & LIVE2D --- */
-        .chat-container { display: flex; flex-direction: column; height: calc(100vh - 160px); min-height: 450px; max-height: 700px; background: rgba(30, 41, 59, 0.4); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin: 0 10px 10px; }
-        .chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+        /* --- CSS MỚI CHO TAB CHAT GIỐNG WEB UI --- */
+        .chat-container-ui { position: relative; display: flex; flex-direction: column; height: calc(100vh - 160px); min-height: 450px; max-height: 600px; border-radius: 12px; overflow: hidden; margin: 0 10px 10px; border: 1px solid var(--line); background: rgba(30, 41, 59, 0.4); }
+        .chat-bg-img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; pointer-events: none; }
+        .live2d-stage { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; opacity: 0.85; }
+        
+        .chat-ui-header { position: relative; z-index: 20; background: rgba(30, 41, 59, 0.8); border-bottom: 1px solid var(--line); padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; backdrop-filter: blur(4px); }
+        .chat-header-btn { background: transparent; border: none; color: #64748b; cursor: pointer; padding: 4px; transition: color 0.2s; display: flex; align-items: center; justify-content: center; }
+        .chat-header-btn:hover { color: #fff; }
+        .chat-header-btn ha-icon { --mdc-icon-size: 16px; }
+        .live2d-select { background: transparent; color: #94a3b8; border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; font-size: 11px; outline: none; cursor: pointer; }
+        .live2d-select option { background: #1e293b; color: #fff; }
+
+        .chat-ui-messages { flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; position: relative; z-index: 10; background: rgba(15, 23, 42, 0.5); }
         .chat-msg-row { display: flex; width: 100%; }
         .chat-msg-row.user { justify-content: flex-end; }
         .chat-msg-row.ai { justify-content: flex-start; }
-        .chat-bubble { max-width: 85%; padding: 10px 14px; font-size: 14px; line-height: 1.5; word-wrap: break-word; color: #f8fafc; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
-        .user-bubble { background: #2563eb; border-radius: 16px; border-top-right-radius: 4px; }
-        .ai-bubble { background: #334155; border-radius: 16px; border-top-left-radius: 4px; border: 1px solid var(--line); }
-        .chat-footer { padding: 12px; background: rgba(15, 23, 42, 0.6); border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; }
-        .chat-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-        .chat-btn { padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; color: #fff; border: none; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: filter 0.2s; }
-        .chat-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
-        .chat-btn ha-icon { --mdc-icon-size: 16px; }
-        .btn-red { background: #ef4444; }
-        .btn-blue { background: #3b82f6; }
-        .btn-purple { background: #6366f1; }
-        .btn-slate { background: #475569; }
-        .chat-input-row { display: flex; gap: 8px; }
-        .chat-send-btn { width: 44px; height: 44px; border-radius: 8px; background: #3b82f6; color: #fff; border: none; cursor: pointer; display: flex; justify-content: center; align-items: center; flex-shrink: 0; transition: all 0.2s; }
-        .chat-send-btn ha-icon { --mdc-icon-size: 20px; }
+        .chat-bubble { max-width: 80%; padding: 8px 12px; font-size: 12px; border-radius: 12px; color: #fff; word-wrap: break-word; }
+        
+        /* Hiệu ứng màu khi không có/có background */
+        .user-bubble { background: #2563eb; }
+        .ai-bubble { background: #16a34a; }
+        .user-bubble-transparent { background: rgba(0,0,0,0.4); border: 2px solid #3b82f6; backdrop-filter: blur(2px); }
+        .ai-bubble-transparent { background: rgba(0,0,0,0.4); border: 2px solid #22c55e; backdrop-filter: blur(2px); }
+
+        .chat-ui-footer { position: relative; z-index: 20; background: rgba(30, 41, 59, 0.5); border-top: 1px solid var(--line); padding: 8px; display: flex; flex-direction: column; gap: 8px; backdrop-filter: blur(4px); }
+        .chat-ui-input { flex: 1; background: rgba(51, 65, 85, 0.5); border: 1px solid rgba(99, 102, 241, 0.2); color: #fff; border-radius: 8px; padding: 8px 12px; font-size: 12px; outline: none; transition: border 0.2s; }
+        .chat-ui-input:focus { border-color: #6366f1; }
+        .chat-ui-send-btn { background: #16a34a; color: #fff; border: none; border-radius: 8px; width: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.2s; }
+        .chat-ui-send-btn:hover { background: #15803d; }
+        
+        .chat-ui-action-btn { font-size: 12px; font-weight: 700; color: #fff; border: none; border-radius: 8px; padding: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        .chat-ui-action-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        
+        .accent-gradient { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+        .bg-purple { background: #9333ea; }
+        .bg-green { background: rgba(22, 163, 74, 0.8); }
+        .bg-slate { background: rgba(51, 65, 85, 0.5); }
+        
+        .border-green { border: 1px solid rgba(34, 197, 94, 0.3); }
+        .border-slate { border: 1px solid rgba(99, 102, 241, 0.2); }
+        
+        .shadow-green { box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
+        .shadow-indigo { box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3); }
+        .shadow-purple { box-shadow: 0 4px 12px rgba(147, 51, 234, 0.3); }
         /* ----------------------------------- */
 
         @media (max-width: 450px) {
@@ -953,7 +1075,6 @@ export const UIRenderMixin = {
     this._dongBoTienDoDom();
     this._capNhatHenGioTienDo();
 
-    // Re-mount Live2D canvas nếu chuyển tab
     if (this._activeTab === "chat") {
       setTimeout(() => {
         if (this._live2dManager && this._live2dManager.live2dApp) {
