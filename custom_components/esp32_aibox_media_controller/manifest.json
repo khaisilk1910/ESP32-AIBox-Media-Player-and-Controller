@@ -1,7 +1,7 @@
 {
   "domain": "esp32_aibox_media_controller",
   "name": "ESP32 AIBox Media Controller",
-  "version": "2026.04.04b2",
+  "version": "2026.04.04b3",
   "integration_type": "device",
   "documentation": "https://github.com/khaisilk1910/ESP32-AIBox-Media-Player-and-Controller",
   "issue_tracker": "https://github.com/khaisilk1910/ESP32-AIBox-Media-Player-and-Controller/issues",
