@@ -349,33 +349,61 @@ export const UIRenderMixin = {
     `;
   },
 
+  // --- CẬP NHẬT TAB CHAT MỚI ---
   _veTabChat() { 
-    const historyMarkup = this._chatHistory.length === 0 ? `<div class="chat-empty empty"><strong>Chưa có lịch sử chat</strong></div>` : this._chatHistory.map(item => `<div class="chat-row ${["user", "human", "client"].includes(String(item.message_type || item.role).toLowerCase()) ? "user" : "server"}"><div class="chat-item ${["user", "human", "client"].includes(String(item.message_type || item.role).toLowerCase()) ? "user" : "server"} hover-lift"><div class="chat-head">${["user", "human", "client"].includes(String(item.message_type || item.role).toLowerCase()) ? "Bạn" : "AI"}</div><div class="chat-content">${this._maHoaHtml(item.content || item.message || "")}</div></div></div>`).join("");
+    const historyMarkup = this._chatHistory.length === 0 
+      ? `<div class="chat-empty empty" style="margin: auto; text-align: center; border: none;"><strong>Chưa có lịch sử chat</strong></div>` 
+      : this._chatHistory.map(item => {
+          const isUser = ["user", "human", "client"].includes(String(item.message_type || item.role).toLowerCase());
+          if (isUser) {
+              return `
+              <div class="chat-msg-row user">
+                 <div class="chat-bubble user-bubble">
+                    ${this._maHoaHtml(item.content || item.message || "")}
+                 </div>
+              </div>`;
+          } else {
+              return `
+              <div class="chat-msg-row ai">
+                 <div class="chat-bubble ai-bubble">
+                    ${this._maHoaHtml(item.content || item.message || "")}
+                 </div>
+              </div>`;
+          }
+        }).join("");
+        
     return `
-      <section class="panel panel-chat">
-        <div class="chat-shell">
-          <div class="chat-shell-header">
-            <div class="chat-shell-title-wrap">
-              <div class="chat-shell-icon"><ha-icon icon="mdi:chat-processing"></ha-icon></div>
-              <div class="chat-shell-title-stack"><h3 class="chat-shell-title">Trò chuyện</h3><div class="chat-shell-subtitle">Sẵn sàng</div></div>
+      <section class="panel panel-chat" style="padding: 0;">
+        <div class="chat-container">
+          <div class="chat-shell-header" style="border-bottom: 1px solid var(--line); padding: 12px; display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2);">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <ha-icon icon="mdi:robot-outline" style="color: var(--accent);"></ha-icon>
+              <strong style="font-size: 14px; color: var(--text);">Trợ lý AI</strong>
             </div>
-            <div class="chat-shell-tools"><button id="chat-refresh" class="chat-tool-btn"><ha-icon icon="mdi:refresh"></ha-icon></button></div>
+            <button id="chat-refresh" class="mini-btn hover-pop" style="background: transparent; border: 1px solid var(--line);"><ha-icon icon="mdi:refresh" style="--mdc-icon-size: 16px;"></ha-icon> Làm mới</button>
           </div>
-          <div class="results chat-results chat-shell-history">${historyMarkup}</div>
-          <div class="chat-shell-footer">
-            <div class="chat-quick-actions">
-              <button id="chat-wakeup" class="chat-quick-btn chat-quick-btn-primary"><ha-icon icon="mdi:microphone"></ha-icon><span>Đánh thức</span></button>
-              <button id="chat-testmic" class="chat-quick-btn hover-pop"><ha-icon icon="mdi:waveform"></ha-icon><span>Thử mic</span></button>
+
+          <div class="chat-messages chat-shell-history" id="chat-messages-container">
+            ${historyMarkup}
+          </div>
+
+          <div class="chat-footer">
+            <div class="chat-buttons">
+               <button id="chat-stop-speak" class="chat-btn btn-red"><ha-icon icon="mdi:stop-circle"></ha-icon> Dừng nói</button>
+               <button id="chat-record" class="chat-btn btn-blue"><ha-icon icon="mdi:microphone"></ha-icon> Ghi âm</button>
+               <button id="chat-wakeup" class="chat-btn btn-purple"><ha-icon icon="mdi:account-voice"></ha-icon> Từ khóa Đ.Thức</button>
+               <button id="chat-testmic" class="chat-btn btn-slate"><ha-icon icon="mdi:waveform"></ha-icon> Test Mic</button>
             </div>
-            <div class="chat-composer">
-              <input id="chat-input" class="text-input chat-composer-input" type="text" placeholder="Nhập tin nhắn..." value="${this._maHoaHtml(this._chatInput)}" />
-              <button id="chat-send" class="chat-send-btn hover-scale"><ha-icon icon="mdi:send"></ha-icon></button>
+            <div class="chat-input-row">
+               <input id="chat-input" class="text-input chat-composer-input" placeholder="Nhập tin nhắn..." value="${this._maHoaHtml(this._chatInput)}" style="border-radius: 8px; height: 44px; flex: 1;" />
+               <button id="chat-send" class="chat-send-btn hover-scale"><ha-icon icon="mdi:send"></ha-icon></button>
             </div>
           </div>
         </div>
       </section>
     `;
   },
+  // ------------------------------
 
   _veTabHeThong() { 
     const eqBandColumns = Math.max(1, this._eqBandCount || EQ_BAND_LABELS.length);
@@ -835,12 +863,28 @@ export const UIRenderMixin = {
         .danger-btn { width: 100%; min-height: 40px; border-radius: 12px; border: 1px solid #ef4444; background: transparent; color: #ef4444; font-size: 14px; font-weight: 800; display: inline-flex; gap: 8px; align-items: center; justify-content: center; cursor: pointer; }
         .danger-btn:hover { background: #ef4444; color: #fff; }
 
-        .chat-shell { border-radius: 16px; border: 1px solid var(--line); margin: 0 10px; }
-        .chat-item { max-width: 85%; padding: 8px 12px; font-size: 13px; }
-        .chat-head { font-size: 9px; padding: 0 6px; min-height: 16px; margin-bottom: 4px; color: var(--muted); }
-        .chat-content { color: var(--text); }
-        .chat-composer-input { min-height: 38px; padding: 8px 12px; font-size: 13px; }
-        .chat-send-btn { width: 38px; height: 38px; }
+        /* --- CSS BỔ SUNG CHO TAB CHAT MỚI --- */
+        .chat-container { display: flex; flex-direction: column; height: calc(100vh - 160px); min-height: 450px; max-height: 700px; background: rgba(30, 41, 59, 0.4); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin: 0 10px 10px; }
+        .chat-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+        .chat-msg-row { display: flex; width: 100%; }
+        .chat-msg-row.user { justify-content: flex-end; }
+        .chat-msg-row.ai { justify-content: flex-start; }
+        .chat-bubble { max-width: 85%; padding: 10px 14px; font-size: 14px; line-height: 1.5; word-wrap: break-word; color: #f8fafc; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+        .user-bubble { background: #2563eb; border-radius: 16px; border-top-right-radius: 4px; }
+        .ai-bubble { background: #334155; border-radius: 16px; border-top-left-radius: 4px; border: 1px solid var(--line); }
+        .chat-footer { padding: 12px; background: rgba(15, 23, 42, 0.6); border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px; }
+        .chat-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+        .chat-btn { padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; color: #fff; border: none; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: filter 0.2s; }
+        .chat-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        .chat-btn ha-icon { --mdc-icon-size: 16px; }
+        .btn-red { background: #ef4444; }
+        .btn-blue { background: #3b82f6; }
+        .btn-purple { background: #6366f1; }
+        .btn-slate { background: #475569; }
+        .chat-input-row { display: flex; gap: 8px; }
+        .chat-send-btn { width: 44px; height: 44px; border-radius: 8px; background: #3b82f6; color: #fff; border: none; cursor: pointer; display: flex; justify-content: center; align-items: center; flex-shrink: 0; transition: all 0.2s; }
+        .chat-send-btn ha-icon { --mdc-icon-size: 20px; }
+        /* ----------------------------------- */
 
         @media (max-width: 450px) {
           .top-tabs { gap: 6px; padding: 6px; margin: 8px 8px 10px; }

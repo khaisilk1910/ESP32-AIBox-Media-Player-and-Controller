@@ -494,6 +494,24 @@ export const UIEventsMixin = {
       });
     }
 
+    // --- SỰ KIỆN MỚI CHO TAB CHAT ("DỪNG NÓI" VÀ "GHI ÂM") ---
+    const chatStopSpeak = root.getElementById("chat-stop-speak");
+    if (chatStopSpeak) {
+      chatStopSpeak.addEventListener("click", async () => {
+        await this._goiDichVu("esp32_aibox_media_controller", "chat_stop_speak");
+        await this._lamMoiEntity(280);
+      });
+    }
+
+    const chatRecord = root.getElementById("chat-record");
+    if (chatRecord) {
+      chatRecord.addEventListener("click", async () => {
+        await this._goiDichVu("esp32_aibox_media_controller", "chat_record"); 
+        await this._lamMoiEntity(280);
+      });
+    }
+    // ---------------------------------------------------------
+
     const chatRefresh = root.getElementById("chat-refresh");
     if (chatRefresh) {
       chatRefresh.addEventListener("click", async () => {
