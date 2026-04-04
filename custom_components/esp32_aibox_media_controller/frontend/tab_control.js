@@ -1,6 +1,12 @@
 import { EQ_BAND_LABELS } from './constants.js';
 
 export const TabControlMixin = {
+  // === CÁC HÀM QUẢN LÝ TRẠNG THÁI CONTROL ===
+  _khoiTaoTrangThaiControl() {
+    this._audioEngineTab = "eq";
+    this._lastControlStateRequestAt = 0;
+  },
+
   async _damBaoTrangThaiDieuKhien() {
     const now = Date.now();
     if (now - this._lastControlStateRequestAt < 7000) return;
@@ -200,17 +206,17 @@ export const TabControlMixin = {
         const level = this._gioiHanEqLevel(ev.target.value, this._layEqLevelTheoBand(band, 0));
         if (!Array.isArray(this._eqBands) || this._eqBands.length < this._eqBandCount) this._eqBands = Array.from({ length: this._eqBandCount }, (_, index) => this._layEqLevelTheoBand(index, 0));
         this._eqBand = band; this._eqLevel = level; this._eqBands[band] = level;
-        this._batDauCanhGacDongBoEq(1000); this._capNhatEqGiaoDien(root);
+        this._batDauCanhGacDongBoEq(1000); this._capNhatEqGiaoDien?.(root);
         const valEl = root.getElementById(`val-eq-${band}`); if (valEl) valEl.innerText = level;
       });
       slider.addEventListener("change", async (ev) => {
         const band = Math.max(0, Math.min(this._eqBandCount - 1, docBand));
         const level = this._gioiHanEqLevel(ev.target.value, this._layEqLevelTheoBand(band, 0));
         this._eqBands[band] = level; this._batDauCanhGacDongBoEq(1600);
-        if (!this._eqEnabled) { this._eqEnabled = true; this._capNhatEqGiaoDien(root); await this._goiDichVu("media_player", "set_eq_enable", { enabled: true }); }
-        await this._goiDichVu("media_player", "set_eq_bandlevel", { band, level }); await this._lamMoiEntity(220, 2); this._xuLyRenderCho();
+        if (!this._eqEnabled) { this._eqEnabled = true; this._capNhatEqGiaoDien?.(root); await this._goiDichVu("media_player", "set_eq_enable", { enabled: true }); }
+        await this._goiDichVu("media_player", "set_eq_bandlevel", { band, level }); await this._lamMoiEntity(220, 2); this._xuLyRenderCho?.();
       });
-      slider.addEventListener("blur", () => { setTimeout(() => this._xuLyRenderCho(), 0); });
+      slider.addEventListener("blur", () => { setTimeout(() => this._xuLyRenderCho?.(), 0); });
     });
     root.querySelectorAll(".ctrl-eq-preset").forEach(el => el.addEventListener("click", async () => await this._apDungEqMau(el.dataset.preset || "")));
 

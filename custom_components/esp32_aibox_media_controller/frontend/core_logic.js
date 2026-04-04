@@ -1,6 +1,111 @@
 import { EQ_BAND_LABELS } from './constants.js';
 
 export const CoreLogicMixin = {
+  // === CÁC HÀM QUẢN LÝ TRẠNG THÁI THIẾT BỊ ===
+  _khoiTaoTrangThaiThietBi() {
+    this._volumeLevel = 0;
+    this._preMuteVolumeLevel = null;
+    this._lastVolumeChangeAt = 0;
+    this._wakeSensitivity = 0.9;
+    this._wakeEnabled = false;
+    this._antiDeafEnabled = false;
+    this._dlnaEnabled = false;
+    this._airplayEnabled = false;
+    this._bluetoothEnabled = false;
+    this._mainLightEnabled = false;
+    this._edgeLightEnabled = false;
+    this._mainLightMode = 0;
+    this._mainLightBrightness = 100;
+    this._mainLightSpeed = 50;
+    this._edgeLightIntensity = 50;
+    this._ledChoEnabled = false;
+    this._stereoEnabled = false;
+    this._stereoReceiver = false;
+    this._stereoDelay = 0;
+    this._surroundW = 40;
+    this._surroundP = 30;
+    this._surroundS = 10;
+    this._dacVolL = 231;
+    this._dacVolR = 231;
+    this._eqEnabled = false;
+    this._eqBandCount = EQ_BAND_LABELS.length;
+    this._eqBands = [0, 0, 0, 0, 0];
+    this._eqBand = 0;
+    this._eqLevel = 0;
+    this._eqSyncGuardUntil = 0;
+    this._bassEnabled = false;
+    this._bassStrength = 0;
+    this._loudnessEnabled = false;
+    this._loudnessGain = 0;
+    this._pendingSwitches = {};
+  },
+
+  _dongBoTrangThaiThietBi(attrs) {
+    const wake = attrs.wake_word || {};
+    const ai = attrs.custom_ai || {};
+    const volumeLevel = attrs.volume_level;
+
+    if (typeof volumeLevel === "number") {
+      if (!this._lastVolumeChangeAt || Date.now() - this._lastVolumeChangeAt > 2000) {
+        this._volumeLevel = Math.max(0, Math.min(1, volumeLevel));
+      }
+    }
+    
+    const sensitivity = this._epKieuSo(wake.sensitivity ?? wake.value, this._wakeSensitivity);
+    if (Number.isFinite(sensitivity)) this._wakeSensitivity = Math.max(0, Math.min(1, sensitivity));
+
+    const wakeEnabled = this._epKieuBoolean(wake.enabled ?? wake.enable ?? wake.state, this._wakeEnabled);
+    const antiDeafEnabled = this._epKieuBoolean(ai.enabled ?? ai.enable ?? ai.state, this._antiDeafEnabled);
+    const dlnaRaw = attrs.dlna_open ?? attrs.dlnaOpen ?? attrs.dlna ?? attrs.dlna_enabled ?? attrs.dlnaEnabled;
+    const airplayRaw = attrs.airplay_open ?? attrs.airplayOpen ?? attrs.airplay ?? attrs.airplay_enabled ?? attrs.airplayEnabled;
+    const bluetoothRaw = attrs.device_state ?? attrs.deviceState ?? attrs.bluetooth_state ?? attrs.bluetoothState;
+    const mainLightRaw = attrs.music_light_enable ?? attrs.musicLightEnable ?? attrs.main_light_enabled ?? attrs.mainLightEnabled;
+
+    this._wakeEnabled = this._layTrangThaiCongTac("wake_enabled", wakeEnabled);
+    this._antiDeafEnabled = this._layTrangThaiCongTac("anti_deaf_enabled", antiDeafEnabled);
+    this._dlnaEnabled = this._layTrangThaiCongTac("dlna_enabled", this._epKieuBoolean(dlnaRaw, this._dlnaEnabled));
+    this._airplayEnabled = this._layTrangThaiCongTac("airplay_enabled", this._epKieuBoolean(airplayRaw, this._airplayEnabled));
+    this._bluetoothEnabled = this._layTrangThaiCongTac("bluetooth_enabled", this._laBluetoothDangBat(bluetoothRaw, this._bluetoothEnabled));
+    this._mainLightEnabled = this._layTrangThaiCongTac("main_light_enabled", this._epKieuBoolean(mainLightRaw, this._mainLightEnabled));
+
+    if (typeof attrs.music_light_luma === "number") this._mainLightBrightness = Math.max(1, Math.min(200, attrs.music_light_luma));
+    if (typeof attrs.music_light_chroma === "number") this._mainLightSpeed = Math.max(1, Math.min(100, attrs.music_light_chroma));
+
+    const mainLightMode = this._epKieuSo(attrs.music_light_mode ?? attrs.musicLightMode, this._mainLightMode);
+    if (Number.isFinite(mainLightMode)) this._mainLightMode = Math.max(0, Math.round(mainLightMode));
+
+    const audioConfig = attrs.audio_config || attrs.audioConfig || {};
+    const eqConfig = attrs.eq_state || attrs.eqState || audioConfig.eq || {};
+    const bassConfig = attrs.bass_state || attrs.bassState || audioConfig.bass || {};
+    const loudnessConfig = attrs.loudness_state || attrs.loudnessState || audioConfig.loudness || {};
+    const edgeLight = attrs.edge_light || attrs.edgeLight || {};
+    
+    if (Date.now() >= this._eqSyncGuardUntil) {
+      this._eqEnabled = this._epKieuBoolean(eqConfig.Eq_Enable ?? eqConfig.sound_effects_eq_enable ?? eqConfig.eq_enable ?? eqConfig.enabled, this._eqEnabled);
+      const eqBands = Array.isArray(eqConfig.Bands?.list) ? eqConfig.Bands.list : [];
+      if (eqBands.length > 0) {
+        this._eqBandCount = eqBands.length;
+        this._eqBands = eqBands.map((b) => this._gioiHanEqLevel(b?.BandLevel ?? b?.band_level ?? b?.level, 0));
+      }
+    }
+    this._eqBandCount = Math.max(1, this._eqBands.length || this._eqBandCount || EQ_BAND_LABELS.length);
+    this._eqBand = Math.max(0, Math.min(this._eqBandCount - 1, Math.round(this._eqBand)));
+    this._eqLevel = this._layEqLevelTheoBand(this._eqBand);
+
+    this._bassEnabled = this._epKieuBoolean(bassConfig.Bass_Enable ?? bassConfig.sound_effects_bass_enable ?? bassConfig.bass_enable ?? bassConfig.enabled, this._bassEnabled);
+    const bassStrength = this._epKieuSo(bassConfig.Current_Strength ?? bassConfig.current_strength ?? bassConfig.strength, this._bassStrength);
+    if (Number.isFinite(bassStrength)) this._bassStrength = Math.max(0, Math.min(1000, Math.round(bassStrength)));
+
+    this._loudnessEnabled = this._epKieuBoolean(loudnessConfig.Loudness_Enable ?? loudnessConfig.sound_effects_loudness_enable ?? loudnessConfig.loudness_enable ?? loudnessConfig.enabled, this._loudnessEnabled);
+    const loudnessGain = this._epKieuSo(loudnessConfig.Current_Gain ?? loudnessConfig.current_gain ?? loudnessConfig.gain, this._loudnessGain);
+    if (Number.isFinite(loudnessGain)) this._loudnessGain = Math.max(-3000, Math.min(3000, Math.round(loudnessGain)));
+
+    this._edgeLightEnabled = this._epKieuBoolean(edgeLight.enabled ?? edgeLight.enable ?? edgeLight.state, this._edgeLightEnabled);
+    const edgeIntensity = this._epKieuSo(edgeLight.intensity ?? edgeLight.value, this._edgeLightIntensity);
+    if (Number.isFinite(edgeIntensity)) this._edgeLightIntensity = Math.max(0, Math.min(100, Math.round(edgeIntensity)));
+  },
+
+  // === CÁC HÀM CORE VÀ TIỆN ÍCH THIẾT BỊ ===
   _gioiHanEqLevel(value, fallback = 0) {
     const numeric = this._epKieuSo(value, fallback);
     return Math.max(-1500, Math.min(1500, Math.round(numeric)));

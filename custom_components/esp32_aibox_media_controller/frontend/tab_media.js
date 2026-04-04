@@ -1,4 +1,75 @@
 export const TabMediaMixin = {
+  // === CÁC HÀM QUẢN LÝ TRẠNG THÁI MEDIA ===
+  _khoiTaoTrangThaiMedia() {
+    this._mediaSearchTab = "songs";
+    this._repeatMode = "all";
+    this._waveEffect = 0;
+    this._mediaDangCompose = false;
+    this._mediaTimKiemSauCompose = false;
+    this._mediaQueryFocused = false;
+    this._progressTimerId = null;
+    this._liveTrackKey = "";
+    this._livePositionSeconds = 0;
+    this._ignorePositionUntil = 0;
+    this._liveDurationSeconds = 0;
+    this._livePlaying = false;
+    this._liveTickAt = 0;
+    this._nowPlayingCache = { trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0 };
+    this._optimisticTrackUntil = 0;
+    this._forcePauseUntil = 0;
+    this._optimisticPlayUntil = 0;
+    this._lastPlayPauseSent = null;
+    this._lastSearchStateKey = "";
+    this._dangChoKetQuaTimKiem = false;
+    this._timKiemDangCho = null;
+    this._lastScrolledTrackIdent = null;
+  },
+
+  _kiemTraThayDoiTrangThaiMedia(entityRef) {
+    const currentSearchStateKey = this._khoaTrangThaiTimKiem(entityRef?.attributes?.last_music_search || {});
+    const searchChanged = currentSearchStateKey !== this._lastSearchStateKey;
+    this._lastSearchStateKey = currentSearchStateKey;
+    return searchChanged;
+  },
+
+  _xuLyFocusTimKiemMedia(changed, mediaChanged) {
+    if (this._dangChoKetQuaTimKiem) {
+      const cho = this._timKiemDangCho;
+      const daCoKetQuaMoi = cho ? this._laKetQuaTimKiemMoi(this._thuocTinh().last_music_search || {}, cho.query, cho.source, cho.mocTruoc, cho.dauVetTruoc) : false;
+      if (daCoKetQuaMoi) { this._pendingRender = false; this._veGiaoDienGiuFocusTimKiem(); } 
+      else { this._pendingRender = true; }
+      return true;
+    }
+    if (changed || mediaChanged) { 
+       this._pendingRender = false; 
+       this._veGiaoDienGiuFocusTimKiem(); 
+       return true; 
+    }
+    return false;
+  },
+
+  // === CÁC HÀM UI & LOGIC MEDIA ===
+  _cuonToiBaiDangPhat() {
+    if (this._activeTab !== "media") return;
+    const p = this._thongTinPhat?.();
+    const currentTrackIdent = p?.track_id || p?.title;
+    if (currentTrackIdent && this._lastScrolledTrackIdent !== currentTrackIdent) {
+      this._lastScrolledTrackIdent = currentTrackIdent;
+      setTimeout(() => {
+        const root = this.shadowRoot;
+        if (!root) return;
+        const container = root.querySelector('.results');
+        const activeItem = container?.querySelector('.is-playing-item');
+        if (container && activeItem) {
+          container.scrollTo({ 
+            top: activeItem.offsetTop - 10, 
+            behavior: 'smooth' 
+          });
+        }
+      }, 150);
+    }
+  },
+
   _xoaHenGioTienDo() {
     if (this._progressTimerId === null) return;
     clearInterval(this._progressTimerId);
@@ -116,7 +187,7 @@ export const TabMediaMixin = {
 
     const stateObj = this._doiTuongTrangThai();
     const aiboxTrackId = this._chuoiKhongRongDauTien(aibox.id, aibox.video_id, aibox.song_id, aibox.track_id);
-    const playId = this._chuoiKhongRongDauTien(play.id, play.video_id, play.song_id, play.track_id, aiboxTrackId);
+    const playId = this._chuoiKhongRongDauTien(aiboxTrackId, play.id, play.video_id, play.song_id, play.track_id);
 
     let byId = items.find((item) => {
       const itemId = this._layIdMucMedia(item);
@@ -352,6 +423,107 @@ export const TabMediaMixin = {
 
     return `
       <section class="panel panel-media">
+        <style>
+          /* -- ĐÂY LÀ CSS RIÊNG CỦA MEDIA -- */
+          .panel-media { padding: 0; overflow: hidden; }
+          .hero { position: relative; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); overflow: hidden; background: #060e22; padding-bottom: 14px; }
+          .hero-bg-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: saturate(1.1) brightness(0.65); transform: scale(1.05); pointer-events: none; }
+          .hero-overlay { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(6, 15, 36, 0.2) 0%, rgba(6, 15, 36, 0.8) 100%); pointer-events: none; }
+          .hero-bg-text { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); font-size: 72px; font-weight: 900; color: rgba(255, 255, 255, 0.04); white-space: nowrap; pointer-events: none; z-index: 0; letter-spacing: -1px; }
+          .hero-content { position: relative; z-index: 1; padding: 12px 14px 0; }
+          .hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+          .hero-titles { flex: 1; min-width: 0; }
+          .song-title { margin: 0; font-size: 16px; font-weight: 800; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.5); }
+          .song-sub { margin-top: 4px; color: #d3dffa; font-size: 12px; font-weight: 600; text-shadow: 0 2px 4px rgba(0,0,0,0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .hero-top-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+          .pill { display: inline-flex; align-items: center; justify-content: center; min-width: 80px; height: 30px; padding: 0 10px; border-radius: 9px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; background: rgba(7, 16, 40, 0.7); border: 1px solid rgba(255,255,255,0.2); color: #fff; backdrop-filter: blur(4px); flex-shrink: 0; }
+          .hero-actions { display: flex; gap: 4px; align-items: center; margin-top: 4px; }
+          .player-stage-new { margin-top: 14px; display: flex; align-items: center; }
+          .cover-disc { width: 80px; height: 80px; flex: 0 0 80px; border-radius: 50%; overflow: hidden; border: 2px solid rgba(255,255,255, 0.3); box-shadow: 0 6px 20px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 30% 25%, rgba(255,255,255, 0.1), rgba(0,0,0, 0.6)); }
+          .cover-disc img { width: 100%; height: 100%; object-fit: cover; }
+          .cover-disc ha-icon { color: #fff; --mdc-icon-size: 28px; }
+          .hero.is-playing .cover-disc.spinning { animation: discSpin 8s linear infinite; }
+          .hero-bottom { position: relative; width: 100%; z-index: 1; margin-top: 20px; display: flex; flex-direction: column; gap: 8px; }
+          .controls-overlay { display: flex; align-items: center; justify-content: center; gap: 28px; padding: 0; background: transparent; border: none; box-shadow: none; backdrop-filter: none; }
+          .icon-btn-transparent { background: transparent; border: none; color: rgba(255,255,255,0.7); cursor: pointer; padding: 8px; border-radius: 50%; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); outline: none; display: inline-flex; align-items: center; justify-content: center; }
+          .icon-btn-transparent:hover { color: #fff; transform: scale(1.3) translateY(-2px); filter: drop-shadow(0 4px 10px rgba(255, 255, 255, 0.6)); }
+          .btn-large ha-icon { --mdc-icon-size: 46px; }
+          .icon-btn-transparent ha-icon { --mdc-icon-size: 28px; }
+          
+          /* FIX TRIỆT ĐỂ: SÓNG ÂM BỊ CẮT VIỀN */
+          .waveform-full { height: 75px; display: flex; align-items: flex-end; justify-content: center; gap: 4px; overflow: visible !important; padding: 0 14px; margin-top: -15px; }
+          .wave-bar { flex: 1; max-width: 6px; height: var(--h); border-radius: 4px; background: var(--accent); transform-origin: bottom; opacity: 0.6; box-shadow: 0 0 6px var(--accent); }
+          .hero.is-playing.wave-effect-0 .wave-bar { animation: waveDance calc(300ms + (var(--i) * 12ms)) ease-in-out infinite alternate; opacity: 1; }
+          .hero.is-playing.wave-effect-1 .wave-bar { animation: wavePulse calc(250ms + (var(--i) * 10ms)) cubic-bezier(0.4, 0, 0.2, 1) infinite alternate; opacity: 1; }
+          .hero.is-playing.wave-effect-2 .wave-bar { animation: waveSweep 0.5s cubic-bezier(0.4, 0, 0.2, 1) infinite; animation-delay: calc(var(--i) * 0.03s); opacity: 1; }
+          @keyframes waveDance { 0% { transform: scaleY(0.2); } 100% { transform: scaleY(1.3); } }
+          @keyframes wavePulse { 0% { transform: scaleY(0.1); filter: hue-rotate(45deg); box-shadow: 0 0 10px var(--accent); } 100% { transform: scaleY(1.2); filter: hue-rotate(0deg); box-shadow: 0 0 10px var(--accent); } }
+          @keyframes waveSweep { 0%, 100% { transform: scaleY(0.15); } 50% { transform: scaleY(1.4); } }
+          @keyframes discSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+          
+          .progress-row { display: flex; align-items: center; gap: 10px; padding: 4px 0 12px; }
+          .time-text { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.7); width: 55px; }
+          #playback-position { text-align: left; }
+          #playback-duration { text-align: right; }
+          .progress-track-new { flex: 1; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; cursor: pointer; position: relative; }
+          .progress-fill-new { height: 100%; background: var(--accent); border-radius: 2px; box-shadow: 0 0 8px var(--accent); pointer-events: none;}
+          .icon-btn-primary { background: var(--accent); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+          .icon-btn-primary:hover { filter: brightness(1.15); }
+          .modern-volume-container { display: flex; align-items: center; gap: 10px; padding: 16px 14px 4px; }
+          .vol-side { display: flex; align-items: center; gap: 6px; width: 55px; }
+          .vol-side-left { justify-content: flex-start; }
+          .vol-side-right { justify-content: flex-end; }
+          .vol-side ha-icon { color: var(--muted); --mdc-icon-size: 18px; transition: color 0.2s; }
+          .vol-side ha-icon#btn-mute-toggle.is-muted { color: #ef4444; }
+          .vol-side ha-icon#btn-mute-toggle:hover { color: var(--text); }
+          .vol-btn { background: transparent; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; transition: all 0.2s; }
+          .vol-btn:hover { background: var(--line); color: var(--text); transform: scale(1.1); }
+          .vol-btn ha-icon { --mdc-icon-size: 16px; margin: 0; }
+          .modern-volume-track-wrap { position: relative; flex: 1; height: 6px; display: flex; align-items: center; }
+          .modern-volume-slider { position: absolute; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 2; margin: 0; }
+          .modern-volume-fill { position: absolute; height: 4px; background: var(--accent); border-radius: 2px; z-index: 1; pointer-events: none; }
+          .modern-volume-track-wrap::before { content: ''; position: absolute; width: 100%; height: 4px; background: var(--line); border-radius: 2px; }
+          .modern-volume-text { color: var(--muted); font-size: 11px; font-weight: 700; width: 25px; text-align: right; }
+          .subtabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 12px 10px 6px; }
+          .subtab { border: 1px solid var(--line); border-radius: 10px; padding: 8px 6px; background: var(--bg-tile); color: var(--muted); font-weight: 600; font-size: 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; transition: all 0.2s; }
+          .subtab:hover { background: var(--line); color: var(--text); transform: translateY(-1px); }
+          .subtab.active { background: var(--accent); color: #fff; border-color: transparent; }
+          .search-row { display: flex; gap: 10px; padding: 8px 10px; }
+          .search-row .icon-btn { width: 40px; height: 40px; flex: 0 0 40px; border-radius: 12px; border: 0; color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+          .search-row .icon-btn ha-icon { --mdc-icon-size: 20px; }
+          .text-input { flex: 1; min-width: 0; height: 40px; border-radius: 12px; border: 1px solid var(--line); background: var(--input-bg); color: var(--text); padding: 8px 12px; font-size: 14px; outline: none; transition: border-color 0.3s, box-shadow 0.3s, background 0.3s; }
+          .text-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--line); }
+          
+          /* FIX SCROLL BÀI HÁT CHUẨN XÁC */
+          .results { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px; padding: 0 10px 12px; max-height: 380px; overflow: auto; overflow-x: hidden; scroll-behavior: smooth; }
+          .empty { border: 1px dashed var(--line); border-radius: 12px; padding: 14px; color: var(--muted); text-align: center; font-size: 13px; grid-column: 1 / -1; }
+          .result-item { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 14px; padding: 8px 10px; background: var(--bg-tile); width: 100%; box-sizing: border-box; min-height: 66px; }
+          .result-meta { grid-column: 2; min-width: 0; max-width: 100%; overflow: hidden; }
+          .result-item.playable { cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; }
+          .result-item.playable:hover, .result-item.is-playing-item { border-color: var(--accent); background: var(--line); transform: translateY(-2px); }
+          .result-item.is-playing-item { border-width: 2px; }
+          .result-item.is-playing-item .result-title { color: var(--accent); }
+          .result-item.playable:active { transform: translateY(0); }
+          .thumb-wrap { width: 50px; height: 50px; border-radius: 10px; overflow: hidden; background: var(--line); }
+          .thumb { width: 50px; height: 50px; object-fit: cover; display: block; }
+          .thumb.fallback { display: flex; align-items: center; justify-content: center; color: var(--muted); }
+          .result-title { display: -webkit-box; width: 100%; max-width: 100%; font-size: 12.5px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: normal; line-height: 1.2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+          .result-artist { margin-top: 2px; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          .result-duration { margin-top: 1px; font-size: 13px; font-weight: 600; color: var(--muted); }
+          .result-actions { grid-column: 3; grid-row: 1; display: flex; gap: 6px; align-items: center; justify-content: flex-end; flex-shrink: 0; }
+          .result-actions ha-icon { --mdc-icon-size: 16px; }
+          .result-actions .play-btn { font-size: 11px; }
+          
+          @media (max-width: 450px) {
+            .cover-disc { width: 60px; height: 60px; flex: 0 0 60px; border-width: 1px; }
+            .subtabs { grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 8px 8px 4px; }
+            .search-row { padding: 6px 8px; gap: 8px; }
+            .result-item { grid-template-columns: 44px minmax(0, 1fr) auto; padding: 6px 8px; gap: 8px; }
+            .thumb, .thumb-wrap { width: 44px; height: 44px; }
+            .result-title { font-size: 12px; }
+          }
+        </style>
+
         <div class="hero ${isPlaying ? "is-playing" : "is-paused"} wave-effect-${this._waveEffect}">
           ${coverUrl ? `<img class="hero-bg-img" src="${coverUrl}" alt="" />` : ""}
           <div class="hero-overlay"></div>
@@ -433,8 +605,11 @@ export const TabMediaMixin = {
             let isPlayingItem = false;
             
             if (!hasHighlightedCurrent) {
-              if (String(playback.track_id).trim() && itemId && String(playback.track_id).trim() === itemId) { isPlayingItem = true; hasHighlightedCurrent = true; } 
-              else if (String(playback.title).trim().toLowerCase() === String(itemTitle).trim().toLowerCase()) { isPlayingItem = true; hasHighlightedCurrent = true; }
+              if (String(playback.track_id).trim() && itemId && String(playback.track_id).trim() === itemId) { 
+                 isPlayingItem = true; hasHighlightedCurrent = true; 
+              } else if (String(playback.title).trim() && String(playback.title).trim().toLowerCase() !== "chưa có bài đang phát" && String(playback.title).trim().toLowerCase() === String(itemTitle).trim().toLowerCase()) { 
+                 isPlayingItem = true; hasHighlightedCurrent = true; 
+              }
             }
 
             return `
@@ -485,7 +660,7 @@ export const TabMediaMixin = {
         if (ev.isComposing || this._mediaDangCompose) { this._mediaTimKiemSauCompose = true; return; }
         this._query = mediaQuery.value; await this._xuLyTimKiem(mediaQuery.value);
       });
-      mediaQuery.addEventListener("blur", () => { this._mediaQueryFocused = false; setTimeout(() => this._xuLyRenderCho(), 0); });
+      mediaQuery.addEventListener("blur", () => { this._mediaQueryFocused = false; setTimeout(() => this._xuLyRenderCho?.(), 0); });
     }
 
     const btnSearch = root.getElementById("btn-search");
@@ -538,6 +713,7 @@ export const TabMediaMixin = {
     });
 
     root.getElementById("btn-mute-toggle")?.addEventListener("click", async () => {
+      this._lastVolumeChangeAt = Date.now();
       if (this._volumeLevel > 0) { this._preMuteVolumeLevel = this._volumeLevel; this._volumeLevel = 0; }
       else { this._volumeLevel = this._preMuteVolumeLevel || 0.5; this._preMuteVolumeLevel = null; }
       this._veGiaoDien(); await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel });
@@ -545,16 +721,29 @@ export const TabMediaMixin = {
 
     const volumeSlider = root.getElementById("media-volume");
     if (volumeSlider) {
-      volumeSlider.addEventListener("input", (ev) => { this._volumeLevel = Number(ev.target.value) / 100; if (this._volumeLevel > 0) this._preMuteVolumeLevel = null; });
-      volumeSlider.addEventListener("change", async (ev) => { this._volumeLevel = Number(ev.target.value) / 100; if (this._volumeLevel > 0) this._preMuteVolumeLevel = null; await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel }); });
+      volumeSlider.addEventListener("input", (ev) => { 
+        this._lastVolumeChangeAt = Date.now();
+        this._volumeLevel = Number(ev.target.value) / 100; 
+        if (this._volumeLevel > 0) this._preMuteVolumeLevel = null; 
+        this._veGiaoDien(); 
+      });
+      volumeSlider.addEventListener("change", async (ev) => { 
+        this._lastVolumeChangeAt = Date.now();
+        this._volumeLevel = Number(ev.target.value) / 100; 
+        if (this._volumeLevel > 0) this._preMuteVolumeLevel = null; 
+        this._veGiaoDien(); 
+        await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel }); 
+      });
     }
 
     root.getElementById("btn-vol-down")?.addEventListener("click", async () => {
+      this._lastVolumeChangeAt = Date.now();
       this._volumeLevel = Math.max(0, Math.round(this._volumeLevel * 100) - 5) / 100; if (this._volumeLevel > 0) this._preMuteVolumeLevel = null;
       this._veGiaoDien(); await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel });
     });
 
     root.getElementById("btn-vol-up")?.addEventListener("click", async () => {
+      this._lastVolumeChangeAt = Date.now();
       this._volumeLevel = Math.min(100, Math.round(this._volumeLevel * 100) + 5) / 100; if (this._volumeLevel > 0) this._preMuteVolumeLevel = null;
       this._veGiaoDien(); await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel });
     });

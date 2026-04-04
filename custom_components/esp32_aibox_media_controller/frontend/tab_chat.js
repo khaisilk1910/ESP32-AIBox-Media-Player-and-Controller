@@ -1,4 +1,51 @@
 export const TabChatMixin = {
+  // === CÁC HÀM QUẢN LÝ TRẠNG THÁI CHAT ===
+  _khoiTaoTrangThaiChat() {
+    this._chatInput = "";
+    this._chatHistory = [];
+    this._chatHistoryLoaded = false;
+    this._chatDangCompose = false;
+    this._chatBgBase64 = "";
+    this._tiktokReplyEnabled = false;
+    this._lastChatStateRequestAt = 0;
+    this._lastChatHistoryRequestAt = 0;
+    this._live2dManager = null;
+  },
+
+  _dongBoTrangThaiChat(attrs) {
+    this._dongBoLichSuChatTuEntity?.(attrs.last_chat_items);
+  },
+
+  async _initLive2D() {
+    if (!this._live2dManager) {
+      try {
+        const baseUrl = new URL('.', import.meta.url).href;
+        const loadScript = (src) => new Promise((resolve, reject) => {
+          if (document.querySelector(`script[src="${baseUrl + src}"]`)) { resolve(); return; }
+          const script = document.createElement('script'); script.src = baseUrl + src; script.onload = resolve; script.onerror = reject; document.head.appendChild(script);
+        });
+        if (!window.PIXI) await loadScript('pixi.js');
+        if (!window.Live2DCubismCore) await loadScript('live2dcubismcore.min.js');
+        if (!window.PIXI || !window.PIXI.live2d) await loadScript('cubism4.min.js');
+        if (!window.Live2DManager) await loadScript('live2d.js');
+        if (window.Live2DManager) { this._live2dManager = new window.Live2DManager(); if (this._activeTab === "chat") this._veGiaoDien(); }
+      } catch (e) { console.error("ESP32 AIBox: Lỗi tải thư viện Live2D", e); }
+    }
+  },
+
+  _veLive2DChoChat() {
+    setTimeout(() => {
+        if (this._live2dManager && this._live2dManager.live2dApp) {
+           const live2dWrapper = this.shadowRoot.getElementById('live2d-wrapper');
+           if (live2dWrapper && this._live2dManager.live2dApp.view) { 
+               live2dWrapper.innerHTML = ''; 
+               live2dWrapper.appendChild(this._live2dManager.live2dApp.view); 
+           }
+        }
+    }, 100);
+  },
+
+  // === CÁC HÀM UI & LOGIC CHAT ===
   _chuanHoaChatMuc(item, fallbackRole = "server") {
     const source = item && typeof item === "object" ? item : {};
     const content = this._chuoiKhongRongDauTien(source.content, source.message, source.text, source.msg);
@@ -140,6 +187,44 @@ export const TabChatMixin = {
 
     return `
       <section class="panel panel-chat" style="padding: 0;">
+        <style>
+          /* -- ĐÂY LÀ CSS RIÊNG CỦA CHAT -- */
+          .chat-container-ui { position: relative; display: flex; flex-direction: column; height: calc(100vh - 160px); min-height: 450px; max-height: 600px; border-radius: 12px; overflow: hidden; margin: 0 10px 10px; border: 1px solid var(--line); background: rgba(30, 41, 59, 0.4); }
+          .chat-bg-img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; pointer-events: none; }
+          .live2d-stage { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; opacity: 0.85; }
+          .chat-ui-header { position: relative; z-index: 20; background: rgba(30, 41, 59, 0.8); border-bottom: 1px solid var(--line); padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; backdrop-filter: blur(4px); }
+          .chat-header-btn { background: transparent; border: none; color: #64748b; cursor: pointer; padding: 4px; transition: color 0.2s; display: flex; align-items: center; justify-content: center; }
+          .chat-header-btn:hover { color: #fff; }
+          .chat-header-btn ha-icon { --mdc-icon-size: 16px; }
+          .live2d-select { background: transparent; color: #94a3b8; border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; font-size: 11px; outline: none; cursor: pointer; }
+          .live2d-select option { background: #1e293b; color: #fff; }
+          .chat-ui-messages { flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; position: relative; z-index: 10; background: rgba(15, 23, 42, 0.5); }
+          .chat-msg-row { display: flex; width: 100%; }
+          .chat-msg-row.user { justify-content: flex-end; }
+          .chat-msg-row.ai { justify-content: flex-start; }
+          .chat-bubble { max-width: 80%; padding: 8px 12px; font-size: 12px; border-radius: 12px; color: #fff; word-wrap: break-word; }
+          .user-bubble { background: #2563eb; }
+          .ai-bubble { background: #16a34a; }
+          .user-bubble-transparent { background: rgba(0,0,0,0.4); border: 2px solid #3b82f6; backdrop-filter: blur(2px); }
+          .ai-bubble-transparent { background: rgba(0,0,0,0.4); border: 2px solid #22c55e; backdrop-filter: blur(2px); }
+          .chat-ui-footer { position: relative; z-index: 20; background: rgba(30, 41, 59, 0.5); border-top: 1px solid var(--line); padding: 8px; display: flex; flex-direction: column; gap: 8px; backdrop-filter: blur(4px); }
+          .chat-ui-input { flex: 1; background: rgba(51, 65, 85, 0.5); border: 1px solid rgba(99, 102, 241, 0.2); color: #fff; border-radius: 8px; padding: 8px 12px; font-size: 12px; outline: none; transition: border 0.2s; }
+          .chat-ui-input:focus { border-color: #6366f1; }
+          .chat-ui-send-btn { background: #16a34a; color: #fff; border: none; border-radius: 8px; width: 40px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background 0.2s; }
+          .chat-ui-send-btn:hover { background: #15803d; }
+          .chat-ui-action-btn { font-size: 12px; font-weight: 700; color: #fff; border: none; border-radius: 8px; padding: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+          .chat-ui-action-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+          .accent-gradient { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+          .bg-purple { background: #9333ea; }
+          .bg-green { background: rgba(22, 163, 74, 0.8); }
+          .bg-slate { background: rgba(51, 65, 85, 0.5); }
+          .border-green { border: 1px solid rgba(34, 197, 94, 0.3); }
+          .border-slate { border: 1px solid rgba(99, 102, 241, 0.2); }
+          .shadow-green { box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3); }
+          .shadow-indigo { box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3); }
+          .shadow-purple { box-shadow: 0 4px 12px rgba(147, 51, 234, 0.3); }
+        </style>
+        
         <div class="chat-container-ui">
           <img class="chat-bg-img" style="display: ${hasBg ? 'block' : 'none'};" src="${hasBg ? 'data:image/jpeg;base64,' + this._chatBgBase64 : ''}" alt="">
           <div id="live2d-wrapper" class="live2d-stage"></div>
@@ -184,7 +269,7 @@ export const TabChatMixin = {
         if (ev.isComposing || this._chatDangCompose) return;
         if (ev.key === "Enter") { ev.preventDefault(); if (this._chatInput.trim() !== '') await this._guiTinNhanChat(); }
       });
-      chatInput.addEventListener("blur", () => { setTimeout(() => this._xuLyRenderCho(), 0); });
+      chatInput.addEventListener("blur", () => { setTimeout(() => this._xuLyRenderCho?.(), 0); });
     }
 
     root.getElementById("chat-send")?.addEventListener("click", async (ev) => { ev.preventDefault(); if(this._chatInput.trim() !== '') await this._guiTinNhanChat(); });
