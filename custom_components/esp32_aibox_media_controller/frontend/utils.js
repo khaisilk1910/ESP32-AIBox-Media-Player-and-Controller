@@ -22,13 +22,12 @@ export const UtilsMixin = {
     if (this._config.entity === newEntityId) return;
     
     this._config.entity = newEntityId;
-
     this._lastEntityRef = null;
     this._pendingRender = false;
-    this._xoaHenGioTienDo();
+    this._xoaHenGioTienDo?.();
     this._liveTrackKey = "";
     this._livePositionSeconds = 0;
-    this._ignorePositionUntil = 0; // THÊM MỚI
+    this._ignorePositionUntil = 0;
     this._liveDurationSeconds = 0;
     this._livePlaying = false;
     this._nowPlayingCache = { trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0 };
@@ -57,7 +56,7 @@ export const UtilsMixin = {
     const active = this.shadowRoot?.activeElement;
     if (this._mediaQueryFocused) return true;
     if (!active) return false;
-    return active.id === "media-query" || active.id === "chat-input";
+    return active.id === "media-query" || active.id === "chatInput";
   },
 
   _dangTuongTacEq() {
@@ -70,78 +69,6 @@ export const UtilsMixin = {
     if (this._dangSuaOInputVanBan()) return;
     this._pendingRender = false;
     this._veGiaoDien();
-  },
-
-  _veGiaoDienGiuFocusTimKiem() {
-    const root = this.shadowRoot;
-    const input = root?.getElementById("media-query");
-    const dangFocus = this._dangFocusTimKiem() && Boolean(input);
-    const viTriBatDau = dangFocus ? input.selectionStart ?? input.value.length : 0;
-    const viTriKetThuc = dangFocus ? input.selectionEnd ?? input.value.length : viTriBatDau;
-
-    this._pendingRender = false;
-    this._veGiaoDien();
-
-    if (!dangFocus) return;
-    const inputMoi = this.shadowRoot?.getElementById("media-query");
-    if (!inputMoi) return;
-    inputMoi.focus();
-    const doDai = inputMoi.value.length;
-    const batDau = Math.max(0, Math.min(doDai, Number(viTriBatDau)));
-    const ketThuc = Math.max(batDau, Math.min(doDai, Number(viTriKetThuc)));
-    inputMoi.setSelectionRange(batDau, ketThuc);
-  },
-
-  _giuFocusTimKiemKhongRender() {
-    if (!this._dangFocusTimKiem()) return;
-    const input = this.shadowRoot?.getElementById("media-query");
-    if (!input) return;
-    const viTriBatDau = input.selectionStart ?? input.value.length;
-    const viTriKetThuc = input.selectionEnd ?? input.value.length;
-    requestAnimationFrame(() => {
-      const inputMoi = this.shadowRoot?.getElementById("media-query");
-      if (!inputMoi) return;
-      inputMoi.focus();
-      const doDai = inputMoi.value.length;
-      const batDau = Math.max(0, Math.min(doDai, Number(viTriBatDau)));
-      const ketThuc = Math.max(batDau, Math.min(doDai, Number(viTriKetThuc)));
-      inputMoi.setSelectionRange(batDau, ketThuc);
-    });
-  },
-
-  _veGiaoDienGiuFocusChat() {
-    const root = this.shadowRoot;
-    const input = root?.getElementById("chat-input");
-    const dangFocus = Boolean(input && root.activeElement === input);
-    const viTriBatDau = dangFocus ? input.selectionStart ?? input.value.length : 0;
-    const viTriKetThuc = dangFocus ? input.selectionEnd ?? input.value.length : viTriBatDau;
-
-    this._pendingRender = false;
-    this._veGiaoDien();
-
-    const inputMoi = this.shadowRoot?.getElementById("chat-input");
-    if (!inputMoi) return;
-    inputMoi.focus();
-    const doDai = inputMoi.value.length;
-    const batDau = Math.max(0, Math.min(doDai, Number(viTriBatDau)));
-    const ketThuc = Math.max(batDau, Math.min(doDai, Number(viTriKetThuc)));
-    inputMoi.setSelectionRange(batDau, ketThuc);
-  },
-
-  _layGiaTriChatInput() {
-    const domValue = this.shadowRoot?.getElementById("chat-input")?.value;
-    if (domValue !== undefined && domValue !== null) {
-      return String(domValue);
-    }
-    return String(this._chatInput || "");
-  },
-
-  _cuonCuoiKhungChat() {
-    requestAnimationFrame(() => {
-      const historyEl = this.shadowRoot?.querySelector(".chat-shell-history");
-      if (!historyEl) return;
-      historyEl.scrollTop = historyEl.scrollHeight;
-    });
   },
 
   _maHoaHtml(value) {
@@ -170,7 +97,7 @@ export const UtilsMixin = {
   _nhanNguon(source) {
     const normalized = String(source || "").toLowerCase();
     if (normalized.includes("zing")) return "ZING MP3";
-    if (normalized.includes("playlist")) return "DANH SACH PHAT";
+    if (normalized.includes("playlist")) return "DANH SÁCH PHÁT";
     if (normalized.includes("youtube")) return "YOUTUBE";
     return normalized ? normalized.toUpperCase() : "AI BOX";
   },
@@ -192,40 +119,68 @@ export const UtilsMixin = {
 
   _laTieuDeNghi(value) {
     const normalized = String(value || "").trim().toLowerCase();
-    return (
-      normalized === "chua co bai dang phat" ||
-      normalized === "chưa có bài đang phát" ||
-      normalized === "khong co nhac" ||
-      normalized === "không có nhạc"
-    );
+    return (normalized === "chua co bai dang phat" || normalized === "chưa có bài đang phát" || normalized === "khong co nhac" || normalized === "không có nhạc");
   },
 
   _layIdMucMedia(item) {
     if (!item || typeof item !== "object") return "";
-    const resolved =
-      item.id || item.video_id || item.videoId || item.song_id ||
-      item.songId || item.track_id || item.trackId || item.playlist_id || item.playlistId || "";
+    const resolved = item.id || item.video_id || item.videoId || item.song_id || item.songId || item.track_id || item.trackId || item.playlist_id || item.playlistId || "";
     return String(resolved || "").trim();
   },
 
   _epKieuBoolean(value, fallback = false) {
     if (value === undefined || value === null) return fallback;
     if (typeof value === "boolean") return value;
-    if (typeof value === "number") {
-      if (!Number.isFinite(value)) return fallback;
-      return value !== 0;
-    }
+    if (typeof value === "number") return Number.isFinite(value) ? value !== 0 : fallback;
     const normalized = String(value).trim().toLowerCase();
     if (!normalized) return fallback;
     if (["1", "true", "on", "enable", "enabled", "yes", "y"].includes(normalized)) return true;
     if (["0", "false", "off", "disable", "disabled", "no", "n"].includes(normalized)) return false;
     const numeric = Number(normalized);
-    if (Number.isFinite(numeric)) return numeric !== 0;
-    return fallback;
+    return Number.isFinite(numeric) ? numeric !== 0 : fallback;
   },
 
   _epKieuSo(value, fallback = 0) {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : fallback;
+  },
+
+  _hexToRgba(hex, opacity) {
+    let c;
+    if(/^#([A-Fa-f0-9]{3}){1,2}$/.test(hex)){
+      c= hex.substring(1).split('');
+      if(c.length === 3) c= [c[0], c[0], c[1], c[1], c[2], c[2]];
+      c= '0x'+c.join('');
+      return 'rgba('+[(c>>16)&255, (c>>8)&255, c&255].join(',')+','+(opacity/100)+')';
+    }
+    return hex;
+  },
+
+  _applyOpacityToGradientStr(str, opacity) {
+    return str.replace(/#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})\b/gi, (match) => this._hexToRgba(match, opacity));
+  },
+
+  _getAverageColor(str) {
+    const hexRegex = /#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})\b/gi;
+    let match;
+    let colors = [];
+    while ((match = hexRegex.exec(str)) !== null) {
+      let hex = match[1];
+      if (hex.length === 3) hex = hex.split('').map(x => x+x).join('');
+      colors.push({ r: parseInt(hex.substring(0,2), 16), g: parseInt(hex.substring(2,4), 16), b: parseInt(hex.substring(4,6), 16) });
+    }
+    const rgbRegex = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/gi;
+    while ((match = rgbRegex.exec(str)) !== null) {
+      colors.push({ r: parseInt(match[1], 10), g: parseInt(match[2], 10), b: parseInt(match[3], 10) });
+    }
+    if (colors.length === 0) return { r: 15, g: 23, b: 42 }; 
+    let r = 0, g = 0, b = 0;
+    colors.forEach(c => { r += c.r; g += c.g; b += c.b; });
+    return { r: Math.round(r / colors.length), g: Math.round(g / colors.length), b: Math.round(b / colors.length) };
+  },
+
+  _getSliderBackgroundStyle(val, min, max, isVertical = false) {
+    const percentage = Math.max(0, Math.min(100, ((Number(val) || 0) - (Number(min) || 0)) / ((Number(max) || 100) - (Number(min) || 0)) * 100));
+    return isVertical ? `linear-gradient(to top, var(--accent) ${percentage}%, rgba(0,0,0,0.3) ${percentage}%)` : `linear-gradient(to right, var(--accent) ${percentage}%, rgba(0,0,0,0.3) ${percentage}%)`;
   }
 };
