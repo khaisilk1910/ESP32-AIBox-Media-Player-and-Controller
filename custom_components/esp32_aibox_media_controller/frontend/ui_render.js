@@ -209,28 +209,141 @@ export const UIRenderMixin = {
   },
 
   _veTabDieuKhien() { 
+    // Bảo vệ các biến khỏi lỗi NaN nếu chưa khởi tạo
+    const wVal = this._surroundW !== undefined && !isNaN(this._surroundW) ? this._surroundW : 40;
+    const pVal = this._surroundP !== undefined && !isNaN(this._surroundP) ? this._surroundP : 30;
+    const sVal = this._surroundS !== undefined && !isNaN(this._surroundS) ? this._surroundS : 10;
+    const dacLVal = this._dacVolL !== undefined && !isNaN(this._dacVolL) ? this._dacVolL : 231;
+    const dacRVal = this._dacVolR !== undefined && !isNaN(this._dacVolR) ? this._dacVolR : 231;
+    const bassStrengthVal = this._bassStrength !== undefined && !isNaN(this._bassStrength) ? this._bassStrength : 0;
+    const loudnessGainVal = this._loudnessGain !== undefined && !isNaN(this._loudnessGain) ? this._loudnessGain : 0;
+    const mainBrightVal = this._mainLightBrightness !== undefined && !isNaN(this._mainLightBrightness) ? this._mainLightBrightness : 100;
+    const mainSpeedVal = this._mainLightSpeed !== undefined && !isNaN(this._mainLightSpeed) ? this._mainLightSpeed : 50;
+    const edgeIntVal = this._edgeLightIntensity !== undefined && !isNaN(this._edgeLightIntensity) ? this._edgeLightIntensity : 50;
+    const wakeSensVal = this._wakeSensitivity !== undefined && !isNaN(this._wakeSensitivity) ? this._wakeSensitivity : 0.95;
+
+    const renderSwitch = (id, label, isChecked) => `
+      <div class="label-line" style="margin-top: 6px;">
+        <strong style="color: var(--text);">${label}</strong>
+        <label class="switch">
+          <input id="${id}" type="checkbox" ${isChecked ? "checked" : ""} />
+          <span class="slider"></span>
+        </label>
+      </div>
+    `;
+    
+    const renderSlider = (id, min, max, step, val, displayVal, label, unit = "") => `
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 12px; color: var(--muted); min-width: 80px;">${label}</span>
+        <input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${val}" style="flex: 1; height: 4px;" />
+        <strong id="val-${id}" style="font-size: 12px; color: var(--accent); min-width: 45px; text-align: right;">${displayVal}${unit}</strong>
+      </div>
+    `;
+
+    const eqBandsHtml = (this._eqBands || [0,0,0,0,0]).map((val, idx) => {
+      const safeVal = val !== undefined && !isNaN(val) ? val : 0;
+      return `
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+        <span id="val-eq-${idx}" style="font-size: 10px; color: var(--accent); min-height: 12px; font-weight: bold;">${safeVal}</span>
+        <input type="range" id="eq-band-ctrl-${idx}" data-idx="${idx}" min="-1500" max="1500" step="10" value="${safeVal}" style="appearance: slider-vertical; width: 14px; height: 100px; accent-color: var(--accent);" orient="vertical">
+        <span style="font-size: 10px; color: var(--muted);">${EQ_BAND_LABELS[idx]}</span>
+      </div>
+    `}).join("");
+
     return `
       <section class="panel">
-        <h3 class="section-title"><ha-icon icon="mdi:tune-variant"></ha-icon> Control</h3>
+        <h3 class="section-title"><ha-icon icon="mdi:tune-variant"></ha-icon> Control Center</h3>
+        
         <div class="tile">
-          <div class="label-line">
-            <strong>Từ khóa đánh thức</strong>
-            <label class="switch"><input id="wake-enabled" type="checkbox" ${this._wakeEnabled ? "checked" : ""} /><span class="slider"></span></label>
+          <div style="border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 12px;">
+            ${renderSwitch('sw-wake-word', 'Từ khóa đánh thức', this._wakeEnabled)}
+            <div class="small" style="margin-top: 4px;">Độ nhạy đề xuất: 0.95-0.99</div>
+            ${renderSlider('wake-sensitivity', 0, 1, 0.01, wakeSensVal, wakeSensVal.toFixed(2), 'Độ nhạy')}
           </div>
-          <div class="small">Độ nhạy đề xuất 0.95-0.99</div>
-          <div class="label-line">
-            <span>${this._wakeSensitivity.toFixed(2)}</span>
-            <button id="wake-refresh" class="mini-btn hover-pop">Refresh</button>
+          ${renderSwitch('ai-enabled', 'Chống điếc AI (Anti-deaf)', this._antiDeafEnabled)}
+          ${renderSwitch('sw-dlna', 'DLNA', this._dlnaEnabled)}
+          ${renderSwitch('sw-airplay', 'AirPlay', this._airplayEnabled)}
+          ${renderSwitch('sw-bluetooth', 'Bluetooth', this._bluetoothEnabled)}
+          ${renderSwitch('sw-led-cho', 'Đèn LED Chờ (Nháy theo nhạc)', this._ledChoEnabled)}
+          
+          <div style="border-top: 1px solid var(--line); margin: 12px 0 8px;"></div>
+          
+          ${renderSwitch('sw-stereo-main', 'Stereo Mode - Loa Mẹ', this._stereoEnabled)}
+          ${renderSwitch('sw-stereo-sub', 'Stereo Mode - Loa Con', this._stereoReceiver)}
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+            <span style="font-size: 12px; color: var(--muted);">Sync Delay (ms):</span>
+            <input type="number" id="stereo-delay-input" value="${this._stereoDelay || 0}" style="background: var(--input-bg); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 4px; width: 60px; text-align: center; font-size: 12px;">
+            <button id="btn-save-delay" style="background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; font-weight: bold;">Lưu</button>
           </div>
-          <input id="wake-sensitivity" type="range" min="0" max="1" step="0.01" value="${this._wakeSensitivity}" ${!this._wakeEnabled ? "disabled" : ""} />
         </div>
+
         <div class="tile">
-          <div class="label-line"><strong>Chống Điếc AI</strong><label class="switch"><input id="ai-enabled" type="checkbox" ${this._antiDeafEnabled ? "checked" : ""} /><span class="slider"></span></label></div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <strong style="color: var(--text); font-size: 14px;">Audio Engine</strong>
+            <div style="display: flex; gap: 4px; background: var(--input-bg); padding: 4px; border-radius: 8px;">
+               <button id="btn-tab-eq" class="mini-btn hover-pop ${this._audioEngineTab === 'eq' ? 'active' : ''}" style="border:none;">Equalizer</button>
+               <button id="btn-tab-surround" class="mini-btn hover-pop ${this._audioEngineTab === 'surround' ? 'active' : ''}" style="border:none;">Surround</button>
+            </div>
+          </div>
+
+          <div id="content-eq" style="display: ${this._audioEngineTab === 'eq' ? 'block' : 'none'};">
+            <div style="display: flex; justify-content: space-around; height: 135px; margin-bottom: 12px;">
+               ${eqBandsHtml}
+            </div>
+            <div class="actions-inline eq-presets" style="justify-content: center; border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 12px;">
+              <button class="mini-btn ctrl-eq-preset hover-pop" data-preset="flat">Phẳng</button>
+              <button class="mini-btn ctrl-eq-preset hover-pop" data-preset="bass">Bass</button>
+              <button class="mini-btn ctrl-eq-preset hover-pop" data-preset="vocal">Vocal</button>
+              <button class="mini-btn ctrl-eq-preset hover-pop" data-preset="rock">Rock</button>
+              <button class="mini-btn ctrl-eq-preset hover-pop" data-preset="jazz">Jazz</button>
+            </div>
+            ${renderSwitch('sw-bass', 'Tăng cường bass', this._bassEnabled)}
+            <div style="margin-bottom: 12px;">${renderSlider('slider-bass-strength', 0, 1000, 10, bassStrengthVal, bassStrengthVal / 10, 'Strength', '%')}</div>
+            
+            ${renderSwitch('sw-loudness', 'Độ lớn âm thanh', this._loudnessEnabled)}
+            <div style="margin-bottom: 12px;">${renderSlider('slider-loudness-gain', -3000, 3000, 10, loudnessGainVal, (loudnessGainVal / 100).toFixed(1), 'Gain', ' dB')}</div>
+
+            <div style="border-top: 1px solid var(--line); padding-top: 12px;">
+               <span style="font-size: 12px; font-weight: bold; color: var(--text); display: block; margin-bottom: 8px;">Dải Trung-Cao</span>
+               ${renderSlider('slider-dac-l', 211, 251, 1, dacLVal, (dacLVal - 231 > 0 ? '+' : '') + (dacLVal - 231), 'Âm trầm', ' dB')}
+               <div style="margin-top: 8px;">${renderSlider('slider-dac-r', 211, 251, 1, dacRVal, (dacRVal - 231 > 0 ? '+' : '') + (dacRVal - 231), 'Âm cao', ' dB')}</div>
+            </div>
+          </div>
+
+          <div id="content-surround" style="display: ${this._audioEngineTab === 'surround' ? 'block' : 'none'};">
+             ${renderSlider('sur-w', 0, 100, 1, wVal, wVal, 'WIDTH')}
+             <div style="margin: 12px 0;">${renderSlider('sur-p', 0, 100, 1, pVal, pVal, 'PRESENCE')}</div>
+             ${renderSlider('sur-s', 0, 100, 1, sVal, sVal, 'SPACE')}
+             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px;">
+                 <button class="mini-btn hover-pop" id="btn-sur-cinema" style="padding: 10px; border-color: var(--accent);">Cinema</button>
+                 <button class="mini-btn hover-pop" id="btn-sur-wide" style="padding: 10px; border-color: var(--accent);">Wide Space</button>
+             </div>
+          </div>
         </div>
+
         <div class="tile">
-          <div class="label-line"><strong>DLNA</strong><label class="switch"><input id="dlna-enabled" type="checkbox" ${this._dlnaEnabled ? "checked" : ""} /><span class="slider"></span></label></div>
-          <div class="label-line"><strong>AirPlay</strong><label class="switch"><input id="airplay-enabled" type="checkbox" ${this._airplayEnabled ? "checked" : ""} /><span class="slider"></span></label></div>
-          <div class="label-line"><strong>Bluetooth</strong><label class="switch"><input id="bluetooth-enabled" type="checkbox" ${this._bluetoothEnabled ? "checked" : ""} /><span class="slider"></span></label></div>
+          <div style="display: flex; gap: 4px; background: var(--input-bg); padding: 4px; border-radius: 8px; margin-bottom: 12px;">
+             <button id="btn-tab-light-main" class="mini-btn hover-pop ${this._lightingTab === 'main' ? 'active' : ''}" style="flex:1; border:none;">Đèn Chính (RGB)</button>
+             <button id="btn-tab-light-edge" class="mini-btn hover-pop ${this._lightingTab === 'edge' ? 'active' : ''}" style="flex:1; border:none;">Đèn Viền (Edge)</button>
+          </div>
+
+          <div id="content-light-main" style="display: ${this._lightingTab === 'main' ? 'block' : 'none'};">
+             ${renderSwitch('sw-light-main', 'Trạng thái Đèn chính', this._mainLightEnabled)}
+             <div style="margin: 12px 0;">${renderSlider('slider-light-bright', 1, 200, 1, mainBrightVal, mainBrightVal, 'Cường độ')}</div>
+             ${renderSlider('slider-light-speed', 1, 100, 1, mainSpeedVal, mainSpeedVal, 'Tốc độ')}
+             
+             <span style="font-size: 12px; font-weight: bold; color: var(--text); margin-top: 16px; display: block;">Chế độ Đèn</span>
+             <div class="actions-inline" style="margin-top: 8px;">
+                 ${[[0, "Mặc định"], [1, "Xoay vòng"], [2, "Nháy 1"], [3, "Đơn sắc"], [4, "Nháy 2"], [7, "Hơi thở"]].map(([m, l]) => 
+                   `<button class="mini-btn light-mode-btn hover-pop ${this._mainLightMode === m ? 'active' : ''}" data-mode="${m}">${l}</button>`
+                 ).join("")}
+             </div>
+          </div>
+
+          <div id="content-light-edge" style="display: ${this._lightingTab === 'edge' ? 'block' : 'none'};">
+             ${renderSwitch('sw-light-edge', 'Trạng thái Đèn viền', this._edgeLightEnabled)}
+             <div style="margin-top: 12px;">${renderSlider('slider-edge-intensity', 0, 100, 1, edgeIntVal, edgeIntVal, 'Cường độ', '%')}</div>
+          </div>
         </div>
       </section>
     `;
@@ -365,7 +478,6 @@ export const UIRenderMixin = {
       return;
     }
 
-    // -- TÍNH TOÁN STYLES & THUẬT TOÁN ĐỘ TƯƠNG PHẢN --
     const conf = this._config || {};
     let bgStr = '';
     let stringForContrastCalc = '';
@@ -390,7 +502,6 @@ export const UIRenderMixin = {
       stringForContrastCalc = bgColor;
     }
 
-    // Auto Contrast & Colors (Thuật toán điện năng)
     const autoContrastEnabled = conf.auto_contrast !== undefined ? conf.auto_contrast : true;
     let c_text = conf.textColor || '#f9fafb';
     let c_muted = conf.mutedColor || '#9ca3af';

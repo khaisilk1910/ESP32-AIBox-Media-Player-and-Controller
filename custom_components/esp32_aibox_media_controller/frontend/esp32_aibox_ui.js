@@ -15,6 +15,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._activeTab = "media";
     this._mediaSearchTab = "songs";
     this._lightingTab = "main";
+    this._audioEngineTab = "eq"; // Tab Control mới
 
     this._repeatMode = "all"; 
     this._waveEffect = 0;     
@@ -45,6 +46,17 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._mainLightBrightness = 100;
     this._mainLightSpeed = 50;
     this._edgeLightIntensity = 50;
+
+    // Các biến an toàn cho Tab Control
+    this._ledChoEnabled = false;
+    this._stereoEnabled = false;
+    this._stereoReceiver = false;
+    this._stereoDelay = 0;
+    this._surroundW = 40;
+    this._surroundP = 30;
+    this._surroundS = 10;
+    this._dacVolL = 231;
+    this._dacVolR = 231;
 
     this._eqEnabled = false;
     this._eqBandCount = EQ_BAND_LABELS.length;
