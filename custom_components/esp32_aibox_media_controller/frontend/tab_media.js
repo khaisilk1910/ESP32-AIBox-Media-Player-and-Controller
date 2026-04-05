@@ -23,9 +23,7 @@ export const TabMediaMixin = {
     this._lastSearchStateKey = "";
     this._dangChoKetQuaTimKiem = false;
     this._timKiemDangCho = null;
-    this._lastScrolledTrackIdent = null;
-    this._savedScrollPosition = 0;
-    this._userIsScrolling = false;
+    this._lastResultsScrollTop = 0; // Biến lưu vị trí cuộn danh sách
 
     // --- State Playlist ---
     this._lastPlaylistLibraryKey = "";
@@ -106,30 +104,6 @@ export const TabMediaMixin = {
   },
 
   // === CÁC HÀM UI & LOGIC MEDIA CHUNG ===
-  _cuonToiBaiDangPhat() {
-    if (this._activeTab !== "media") return;
-    if (this._userIsScrolling) return; 
-    
-    const p = this._thongTinPhat?.();
-    const currentTrackIdent = p?.track_id || p?.title;
-    
-    if (currentTrackIdent && this._lastScrolledTrackIdent !== currentTrackIdent) {
-      this._lastScrolledTrackIdent = currentTrackIdent;
-      setTimeout(() => {
-        if (this._userIsScrolling) return; 
-        const root = this.shadowRoot || this;
-        if (!root) return;
-        const container = root.querySelector('.results');
-        const activeItem = container?.querySelector('.is-playing-item');
-        if (container && activeItem) {
-          container.scrollTo({ top: activeItem.offsetTop - 10, behavior: 'smooth' });
-          setTimeout(() => { 
-             if (!this._userIsScrolling) this._savedScrollPosition = container.scrollTop; 
-          }, 500);
-        }
-      }, 300);
-    }
-  },
 
   _xoaHenGioTienDo() {
     if (this._progressTimerId === null) return;
@@ -193,6 +167,63 @@ export const TabMediaMixin = {
     this._capNhatHenGioTienDo();
   },
 
+  // THÊM MỚI: Hàm xử lý nhảy bài dựa trên danh sách Frontend
+  async _chuyenBaiTuList(huong) { // huong = 1 (next) hoặc -1 (prev)
+    const playback = this._thongTinPhat();
+    const currentTrackId = playback.track_id;
+    
+    let list = [];
+    let listSource = "youtube";
+
+    // Lấy đúng danh sách đang hiển thị
+    if (this._mediaSearchTab === "playlists" && this._dangXemPlaylistId) {
+        list = Array.isArray(this._danhSachBaiHatTrongPlaylist) ? this._danhSachBaiHatTrongPlaylist : [];
+        listSource = "playlist";
+    } else {
+        list = Array.isArray(playback.items) ? playback.items : [];
+        listSource = playback.search?.source || playback.play?.source || "youtube";
+    }
+
+    if (list.length === 0) {
+        // Fallback gọi service mặc định nếu không có list
+        await this._goiDichVu("media_player", huong === 1 ? "media_next_track" : "media_previous_track");
+        return;
+    }
+
+    // Tìm index của bài hiện tại
+    let currentIndex = list.findIndex(item => {
+        let parsed = item;
+        if (typeof item === 'string') { try { parsed = JSON.parse(item); } catch(e){} }
+        if (!parsed) return false;
+        
+        let itemId = typeof this._layIdMucMedia === 'function' ? this._layIdMucMedia(parsed) : (parsed.id || parsed.video_id || parsed.song_id || parsed.track_id);
+        if (currentTrackId && itemId && String(itemId) === String(currentTrackId)) return true;
+        
+        let itemTitle = parsed.title || parsed.name || parsed.song_name;
+        if (itemTitle && playback.title && String(itemTitle).trim().toLowerCase() === String(playback.title).trim().toLowerCase()) return true;
+        
+        return false;
+    });
+
+    if (currentIndex !== -1) {
+        // Tính toán index bài tiếp theo
+        let nextIndex = currentIndex + huong;
+        if (nextIndex >= list.length) nextIndex = 0; // Quay về đầu
+        if (nextIndex < 0) nextIndex = list.length - 1; // Nhảy xuống cuối
+
+        let nextItem = list[nextIndex];
+        if (typeof nextItem === 'string') { try { nextItem = JSON.parse(nextItem); } catch(e){} }
+        if (!nextItem || typeof nextItem !== 'object') nextItem = {};
+
+        const itemSource = nextItem.source || listSource;
+        // Ra lệnh phát chính xác bài hát mới
+        await this._xuLyPhatMuc(nextItem, itemSource);
+    } else {
+        // Fallback
+        await this._goiDichVu("media_player", huong === 1 ? "media_next_track" : "media_previous_track");
+    }
+  },
+
   async _xuLyHetBai() {
     this._livePositionSeconds = 0;
     this._ignorePositionUntil = Date.now() + 4000;
@@ -210,7 +241,8 @@ export const TabMediaMixin = {
         await this._goiDichVu("media_player", "media_play");
       }
     } else if (this._repeatMode === "all" || this._autoNextEnabled) {
-      await this._goiDichVu("media_player", "media_next_track");
+      // ĐÃ SỬA: Gọi hàm chuyển bài bằng list thay vì media_next_track
+      await this._chuyenBaiTuList(1);
     }
   },
 
@@ -604,7 +636,6 @@ export const TabMediaMixin = {
     
     const previousKey = this._khoaTrangThaiPayload(this._thuocTinh().last_playlist_event);
     try {
-      // ĐÃ SỬA LỖI Ở ĐÂY: Xóa video_id và song_id do backend không cho phép
       await this._goiDichVu("media_player", "playlist_add_song", {
           playlist_id: String(playlistId),
           source: sSource,
@@ -673,13 +704,12 @@ export const TabMediaMixin = {
     const listSource = playback.search?.source || playback.play?.source || "youtube";
     
     this._dongBoTienDoTrucTiep(playback.track_key || "", this._epKieuGiayPhat(playback.position, 0), this._epKieuGiayPhat(playback.duration, 0), isPlaying);
-    const liveDurationSeconds = this._liveDurationSeconds > 0 ? this._liveDurationSeconds : this._epKieuGiayPhat(playback.duration, 0);
-
-    const progressPercent = liveDurationSeconds > 0 ? Math.max(0, Math.min(100, (this._livePositionSeconds / liveDurationSeconds) * 100)) : 0;
+    
     const coverUrl = this._maHoaHtml(playback.thumbnail_url || "");
     const repeatIcon = this._repeatMode === "one" ? "mdi:repeat-once" : (this._repeatMode === "all" ? "mdi:repeat" : "mdi:repeat-off");
     const volIcon = volumePercent === 0 ? "mdi:volume-mute" : (volumePercent < 40 ? "mdi:volume-low" : (volumePercent < 80 ? "mdi:volume-medium" : "mdi:volume-high"));
     
+    const currentQuery = this._query || playback.search?.query || "";
     let hasHighlightedCurrent = false;
 
     const safePlaylists = Array.isArray(this._danhSachPlaylist) ? this._danhSachPlaylist : [];
@@ -698,11 +728,8 @@ export const TabMediaMixin = {
               ${this._playlistDetailLoading && safePlaylistSongs.length === 0 ? `<div class="empty">Đang tải chi tiết playlist...</div>` :
                 safePlaylistSongs.length === 0 ? `<div class="empty">Playlist trống.</div>` : 
                 safePlaylistSongs.map((itemObj, idx) => {
-                  
                   let song = itemObj;
-                  if (typeof song === 'string') {
-                      try { song = JSON.parse(song); } catch(e){}
-                  }
+                  if (typeof song === 'string') { try { song = JSON.parse(song); } catch(e){} }
                   if (!song || typeof song !== 'object') song = {};
 
                   const sSource = (song.source || '').toLowerCase().includes('zing') ? 'zing' : 'youtube';
@@ -801,7 +828,8 @@ export const TabMediaMixin = {
     return `
       <section class="panel panel-media">
         <style>
-          .panel-media { padding: 0; overflow: hidden; position: relative; }
+          /* Thêm min-height để thẻ panel không bị co rút khi DOM bị xóa tạm thời lúc render */
+          .panel-media { padding: 0; overflow: hidden; position: relative; min-height: 500px; display: flex; flex-direction: column; }
           .hero { position: relative; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); overflow: hidden; background: #060e22; padding-bottom: 14px; }
           .hero-bg-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: saturate(1.1) brightness(0.65); transform: scale(1.05); pointer-events: none; }
           .hero-overlay { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(6, 15, 36, 0.2) 0%, rgba(6, 15, 36, 0.8) 100%); pointer-events: none; }
@@ -870,7 +898,9 @@ export const TabMediaMixin = {
           .text-input { flex: 1; min-width: 0; height: 40px; border-radius: 12px; border: 1px solid var(--line); background: var(--input-bg); color: var(--text); padding: 8px 12px; font-size: 14px; outline: none; transition: border-color 0.3s, box-shadow 0.3s, background 0.3s; }
           .text-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--line); }
           
-          .results { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px; padding: 0 10px 12px; max-height: 380px; overflow: auto; overflow-x: hidden; scroll-behavior: smooth; }
+          /* Thêm min-height để tránh danh sách sụp về 0, gây cuộn lên đầu */
+          .results { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px; padding: 0 10px 12px; max-height: 380px; min-height: 250px; overflow-y: auto; overflow-x: hidden; flex: 1; align-content: flex-start; }
+          
           .empty { border: 1px dashed var(--line); border-radius: 12px; padding: 14px; color: var(--muted); text-align: center; font-size: 13px; grid-column: 1 / -1; }
           .result-item { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 14px; padding: 8px 10px; background: var(--bg-tile); width: 100%; box-sizing: border-box; min-height: 66px; }
           .result-meta { grid-column: 2; min-width: 0; max-width: 100%; overflow: hidden; }
@@ -907,8 +937,12 @@ export const TabMediaMixin = {
           .modal-close:hover { background: rgba(255,255,255,0.1); color: #fff; }
           .modal-field { margin-bottom: 16px; }
           .modal-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
-          .modal-select, .modal-input { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #fff; padding: 10px; font-size: 14px; outline: none; }
+          
+          .modal-input { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #fff; padding: 10px; font-size: 14px; outline: none; }
+          .modal-select { width: 100%; background-color: #1e293b; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; color: #fff; padding: 10px; font-size: 14px; outline: none; cursor: pointer; appearance: auto; }
+          .modal-select option { background-color: #1e293b !important; color: #fff !important; padding: 8px; }
           .modal-select:focus, .modal-input:focus { border-color: var(--accent); }
+          
           .modal-song-info { background: rgba(255,255,255,0.05); padding: 10px; border-radius: 8px; margin-bottom: 16px; }
           .modal-song-title { font-weight: bold; font-size: 14px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
           .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
@@ -969,11 +1003,11 @@ export const TabMediaMixin = {
               <div class="waveform-full">${this._veCotSong()}</div>
               
               <div class="progress-row">
-                <span id="playback-position" class="time-text">${this._dinhDangDongHo(this._livePositionSeconds, "0:00")}</span>
-                <div id="playback-progress-track" class="progress-track-new" role="slider" aria-valuemin="0" aria-valuemax="${Math.max(0, Math.round(liveDurationSeconds))}" aria-valuenow="${Math.max(0, Math.round(this._livePositionSeconds))}">
-                  <div id="playback-progress" class="progress-fill-new" style="width:${progressPercent.toFixed(2)}%"></div>
+                <span id="playback-position" class="time-text">0:00</span>
+                <div id="playback-progress-track" class="progress-track-new" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                  <div id="playback-progress" class="progress-fill-new" style="width:0%"></div>
                 </div>
-                <span id="playback-duration" class="time-text">${liveDurationSeconds > 0 ? this._dinhDangThoiLuong(liveDurationSeconds) : "--:--"}</span>
+                <span id="playback-duration" class="time-text">--:--</span>
               </div>
             </div>
           </div>
@@ -1002,7 +1036,7 @@ export const TabMediaMixin = {
         </div>
 
         <div class="search-row ${this._mediaSearchTab === "playlists" ? "hidden" : ""}">
-          <input id="media-query" class="text-input" type="text" placeholder="${this._mediaSearchTab === 'playlist' ? 'Tìm playlist...' : 'Tìm bài hát...'}" value="${this._maHoaHtml(this._query)}" />
+          <input id="media-query" class="text-input" type="text" placeholder="${this._mediaSearchTab === 'playlist' ? 'Tìm playlist...' : 'Tìm bài hát...'}" value="${this._maHoaHtml(currentQuery)}" />
           <button type="button" id="btn-search" class="icon-btn icon-btn-primary search-btn-hover"><ha-icon icon="mdi:magnify"></ha-icon></button>
         </div>
 
@@ -1077,55 +1111,40 @@ export const TabMediaMixin = {
   },
 
   _ganSuKienTabMedia(root) {
-    const resultsContainer = root.querySelector('.results');
+    this._dongBoTienDoDom();
+
+    // HÀM TIỆN ÍCH: Gỡ Focus trước khi render để chống lỗi "Nhảy trang (Focus Loss Jump)"
+    const removeFocus = () => {
+        try {
+            const activeEl = (this.shadowRoot || document).activeElement;
+            if (activeEl && typeof activeEl.blur === 'function' && !['media-query', 'input-create-playlist', 'input-new-playlist-add', 'select-playlist'].includes(activeEl.id)) {
+                activeEl.blur();
+            }
+        } catch(e) {}
+    };
+
+    // GIỮ VỊ TRÍ CUỘN: Sử dụng rAF và setTimeout để chống ghi đè giá trị 0 khi DOM sụp
+    const resultsContainer = root.querySelector(".results");
     if (resultsContainer) {
-        if (this._savedScrollPosition > 0) {
-            resultsContainer.scrollTop = this._savedScrollPosition;
-        }
-
-        let scrollTimeout;
-        const lockRender = () => {
-            this._userIsScrolling = true; 
-            this._pendingRender = true;
-        };
-        const unlockRender = () => {
-            this._userIsScrolling = false; 
-            if (this._pendingRender) {
-                this._xuLyRenderCho?.();
-            }
-        };
-
-        resultsContainer.addEventListener('scroll', () => {
-            this._savedScrollPosition = resultsContainer.scrollTop;
-            lockRender();
-            clearTimeout(scrollTimeout);
-            scrollTimeout = setTimeout(unlockRender, 1200); 
-        }, { passive: true });
-
-        resultsContainer.addEventListener('touchstart', lockRender, { passive: true });
-        resultsContainer.addEventListener('touchend', () => {
-            clearTimeout(scrollTimeout);
-            scrollTimeout = setTimeout(unlockRender, 1200);
-        }, { passive: true });
-
-        resultsContainer.addEventListener('mousedown', lockRender, { passive: true });
-        resultsContainer.addEventListener('mouseup', () => {
-            clearTimeout(scrollTimeout);
-            scrollTimeout = setTimeout(unlockRender, 1200);
-        }, { passive: true });
-        
-        resultsContainer.addEventListener('mouseleave', () => {
-            if (this._userIsScrolling) {
-                clearTimeout(scrollTimeout);
-                scrollTimeout = setTimeout(unlockRender, 1200);
-            }
+        requestAnimationFrame(() => {
+            resultsContainer.scrollTop = this._lastResultsScrollTop || 0;
+            
+            setTimeout(() => {
+                resultsContainer.addEventListener("scroll", (ev) => {
+                    // Chỉ lưu nếu khung cuộn đã tính toán Layout hợp lệ
+                    if (ev.target.scrollHeight >= ev.target.clientHeight) {
+                        this._lastResultsScrollTop = ev.target.scrollTop;
+                    }
+                }, { passive: true });
+            }, 50);
         });
     }
 
     root.querySelectorAll("[data-media-tab]").forEach((el) => {
       el.addEventListener("click", async (ev) => { 
           ev.preventDefault(); ev.stopPropagation();
-          this._savedScrollPosition = 0; 
+          removeFocus();
+          this._lastResultsScrollTop = 0; 
           this._mediaSearchTab = el.dataset.mediaTab || "songs"; 
           if(this._mediaSearchTab === "playlists") {
               await this._taiDanhSachPlaylist();
@@ -1138,12 +1157,14 @@ export const TabMediaMixin = {
 
     root.querySelector("#btn-repeat")?.addEventListener("click", (ev) => {
       ev.preventDefault(); ev.stopPropagation();
+      removeFocus();
       this._repeatMode = this._repeatMode === "all" ? "one" : (this._repeatMode === "one" ? "off" : "all");
       this._veGiaoDien();
     });
 
     root.querySelector("#btn-autonext")?.addEventListener("click", async (ev) => {
       ev.preventDefault(); ev.stopPropagation();
+      removeFocus();
       this._autoNextEnabled = !this._autoNextEnabled;
       this._veGiaoDien();
       try { await this._goiDichVu("media_player", "toggle_auto_next", {}); } catch(e){}
@@ -1151,22 +1172,33 @@ export const TabMediaMixin = {
 
     root.querySelector("#btn-wave-toggle")?.addEventListener("click", (ev) => {
       ev.preventDefault(); ev.stopPropagation();
+      removeFocus();
       this._waveEffect = (this._waveEffect + 1) % 3;
       this._veGiaoDien();
     });
 
     const mediaQuery = root.querySelector("#media-query");
     if (mediaQuery) {
+      if (!this._query) {
+         this._query = mediaQuery.value; 
+      }
+
       mediaQuery.addEventListener("focus", () => { this._mediaQueryFocused = true; });
       mediaQuery.addEventListener("input", (ev) => { this._query = ev.target.value; });
       mediaQuery.addEventListener("compositionstart", () => { this._mediaDangCompose = true; });
       mediaQuery.addEventListener("compositionend", async (ev) => {
         this._mediaDangCompose = false; this._query = ev.target.value;
-        if (this._mediaTimKiemSauCompose) { this._mediaTimKiemSauCompose = false; await this._xuLyTimKiem(ev.target.value); }
+        if (this._mediaTimKiemSauCompose) { 
+            this._mediaTimKiemSauCompose = false; 
+            this._lastResultsScrollTop = 0; 
+            await this._xuLyTimKiem(ev.target.value); 
+        }
       });
       mediaQuery.addEventListener("keydown", async (ev) => {
         if (ev.key !== "Enter") return; ev.preventDefault(); ev.stopPropagation();
+        removeFocus();
         if (ev.isComposing || this._mediaDangCompose) { this._mediaTimKiemSauCompose = true; return; }
+        this._lastResultsScrollTop = 0; 
         this._query = mediaQuery.value; await this._xuLyTimKiem(mediaQuery.value);
       });
       mediaQuery.addEventListener("blur", () => { this._mediaQueryFocused = false; setTimeout(() => this._xuLyRenderCho?.(), 0); });
@@ -1177,6 +1209,8 @@ export const TabMediaMixin = {
       btnSearch.addEventListener("mousedown", (ev) => ev.preventDefault());
       btnSearch.addEventListener("click", async (ev) => {
           ev.preventDefault(); ev.stopPropagation();
+          removeFocus();
+          this._lastResultsScrollTop = 0; 
           await this._xuLyTimKiem(mediaQuery ? mediaQuery.value : this._query);
       });
     }
@@ -1198,18 +1232,24 @@ export const TabMediaMixin = {
       }, { passive: false });
     }
 
+    // ĐÃ SỬA: Hàm gọi chuyển bài Prev (-1)
     root.querySelector("#btn-prev")?.addEventListener("click", async (ev) => {
       ev.preventDefault(); ev.stopPropagation();
+      removeFocus();
       this._livePositionSeconds = 0; this._ignorePositionUntil = Date.now() + 4000; this._lastPlayPauseSent = "play"; this._forcePauseUntil = 0; this._optimisticPlayUntil = Date.now() + 5000;
       this._optimisticTrackUntil = 0; this._nowPlayingCache = { trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0 };
       this._livePlaying = true; this._dongBoTienDoDom(); this._veGiaoDien(); 
-      try { await this._goiDichVu("media_player", "media_previous_track"); await this._lamMoiEntity(300, 2); } catch(e){}
+      try { 
+        await this._chuyenBaiTuList(-1); 
+        await this._lamMoiEntity(300, 2); 
+      } catch(e){}
     });
 
-    root.querySelector("#btn-playpause")?.addEventListener("click", async (ev) => { ev.preventDefault(); ev.stopPropagation(); await this._xuLyPhatTamDung(); });
+    root.querySelector("#btn-playpause")?.addEventListener("click", async (ev) => { ev.preventDefault(); ev.stopPropagation(); removeFocus(); await this._xuLyPhatTamDung(); });
 
     root.querySelector("#btn-stop")?.addEventListener("click", async (ev) => {
       ev.preventDefault(); ev.stopPropagation();
+      removeFocus();
       this._forcePauseUntil = Date.now() + 5000; this._optimisticPlayUntil = 0; this._liveTrackKey = ""; this._livePositionSeconds = 0; this._ignorePositionUntil = Date.now() + 4000;
       this._liveDurationSeconds = 0; this._livePlaying = false; this._optimisticTrackUntil = 0; this._nowPlayingCache = { trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0 };
       this._lastPlayPauseSent = "pause"; this._dongBoTienDoDom(); this._capNhatHenGioTienDo(); this._veGiaoDien(); 
@@ -1217,16 +1257,22 @@ export const TabMediaMixin = {
       await this._lamMoiEntity(300);
     });
 
+    // ĐÃ SỬA: Hàm gọi chuyển bài Next (1)
     root.querySelector("#btn-next")?.addEventListener("click", async (ev) => {
       ev.preventDefault(); ev.stopPropagation();
+      removeFocus();
       this._livePositionSeconds = 0; this._ignorePositionUntil = Date.now() + 4000; this._lastPlayPauseSent = "play"; this._forcePauseUntil = 0; this._optimisticPlayUntil = Date.now() + 5000;
       this._optimisticTrackUntil = 0; this._nowPlayingCache = { trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0 };
       this._livePlaying = true; this._dongBoTienDoDom(); this._veGiaoDien(); 
-      try { await this._goiDichVu("media_player", "media_next_track"); await this._lamMoiEntity(300, 2); } catch(e){}
+      try { 
+        await this._chuyenBaiTuList(1); 
+        await this._lamMoiEntity(300, 2); 
+      } catch(e){}
     });
 
     root.querySelector("#btn-mute-toggle")?.addEventListener("click", async (ev) => {
       ev.preventDefault(); ev.stopPropagation();
+      removeFocus();
       this._lastVolumeChangeAt = Date.now();
       if (this._volumeLevel > 0) { this._preMuteVolumeLevel = this._volumeLevel; this._volumeLevel = 0; }
       else { this._volumeLevel = this._preMuteVolumeLevel || 0.5; this._preMuteVolumeLevel = null; }
@@ -1245,6 +1291,7 @@ export const TabMediaMixin = {
         if(text) text.innerText = `${ev.target.value}%`;
       });
       volumeSlider.addEventListener("change", async (ev) => { 
+        removeFocus();
         this._lastVolumeChangeAt = Date.now() + 500;
         this._volumeLevel = Number(ev.target.value) / 100; 
         if (this._volumeLevel > 0) this._preMuteVolumeLevel = null; 
@@ -1253,28 +1300,16 @@ export const TabMediaMixin = {
       });
     }
 
-    root.querySelector("#btn-vol-down")?.addEventListener("click", async (ev) => {
-      ev.preventDefault(); ev.stopPropagation();
-      this._lastVolumeChangeAt = Date.now() + 500;
-      this._volumeLevel = Math.max(0, Math.round(this._volumeLevel * 100) - 5) / 100; if (this._volumeLevel > 0) this._preMuteVolumeLevel = null;
-      this._veGiaoDien(); 
-      try { await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel }); } catch(e){}
-    });
-
-    root.querySelector("#btn-vol-up")?.addEventListener("click", async (ev) => {
-      ev.preventDefault(); ev.stopPropagation();
-      this._lastVolumeChangeAt = Date.now() + 500;
-      this._volumeLevel = Math.min(100, Math.round(this._volumeLevel * 100) + 5) / 100; if (this._volumeLevel > 0) this._preMuteVolumeLevel = null;
-      this._veGiaoDien(); 
-      try { await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel }); } catch(e){}
-    });
-
-    const playFromDataset = async (dataset) => { if (dataset?.id) await this._xuLyPhatMuc({ id: dataset.id }, dataset.source || ""); };
+    const playFromDataset = async (dataset) => { 
+        removeFocus();
+        if (dataset?.id) await this._xuLyPhatMuc({ id: dataset.id }, dataset.source || ""); 
+    };
 
     root.querySelectorAll(".play-btn").forEach(el => el.addEventListener("click", async (ev) => { ev.preventDefault(); ev.stopPropagation(); await playFromDataset(el.dataset); }));
     
     root.querySelectorAll(".add-pl-btn").forEach(el => el.addEventListener("click", async (ev) => {
       ev.preventDefault(); ev.stopPropagation(); 
+      removeFocus();
       try {
           const songData = JSON.parse(decodeURIComponent(el.dataset.song));
           const source = el.dataset.source;
@@ -1294,29 +1329,34 @@ export const TabMediaMixin = {
 
     root.querySelectorAll(".view-pl-btn").forEach(el => el.addEventListener("click", async (ev) => {
         ev.preventDefault(); ev.stopPropagation();
-        this._savedScrollPosition = 0; 
+        removeFocus();
+        this._lastResultsScrollTop = 0; 
         await this._taiBaiHatTrongPlaylist(el.dataset.id, el.dataset.name);
     }));
     
     root.querySelectorAll(".play-pl-btn").forEach(el => el.addEventListener("click", async (ev) => {
         ev.preventDefault(); ev.stopPropagation();
+        removeFocus();
         await this._phatPlaylist(el.dataset.id);
     }));
     
     root.querySelectorAll(".delete-pl-btn").forEach(el => el.addEventListener("click", async (ev) => {
         ev.preventDefault(); ev.stopPropagation();
+        removeFocus();
         this._modalXoaPlaylist = { show: true, id: el.dataset.id };
         this._veGiaoDien();
     }));
     
     root.querySelectorAll(".delete-song-btn").forEach(el => el.addEventListener("click", async (ev) => {
         ev.preventDefault(); ev.stopPropagation();
+        removeFocus();
         await this._xoaBaiHatKhoiPlaylist(el.dataset.playlistId, el.dataset.index);
     }));
     
     root.querySelector("#btn-back-playlists")?.addEventListener("click", (ev) => {
         ev.preventDefault(); ev.stopPropagation();
-        this._savedScrollPosition = 0; 
+        removeFocus();
+        this._lastResultsScrollTop = 0; 
         this._dangXemPlaylistId = null;
         this._playlistDetailVisibleId = "";
         this._veGiaoDien();
@@ -1324,11 +1364,13 @@ export const TabMediaMixin = {
     
     root.querySelector("#btn-refresh-playlists")?.addEventListener("click", async (ev) => {
         ev.preventDefault(); ev.stopPropagation();
+        removeFocus();
         await this._taiDanhSachPlaylist();
     });
     
     root.querySelector("#btn-show-create-playlist")?.addEventListener("click", (ev) => {
         ev.preventDefault(); ev.stopPropagation();
+        removeFocus();
         this._modalTaoPlaylist.show = true;
         this._veGiaoDien();
         setTimeout(() => {
@@ -1339,6 +1381,7 @@ export const TabMediaMixin = {
 
     const closeCreateModal = (ev) => {
         if(ev) { ev.preventDefault(); ev.stopPropagation(); }
+        removeFocus();
         this._modalTaoPlaylist.show = false; 
         this._veGiaoDien(); 
     };
@@ -1368,6 +1411,7 @@ export const TabMediaMixin = {
 
     const closeAddModal = (ev) => {
         if(ev) { ev.preventDefault(); ev.stopPropagation(); } 
+        removeFocus();
         this._modalThemVaoPlaylist.show = false; 
         this._veGiaoDien(); 
     };
@@ -1423,6 +1467,7 @@ export const TabMediaMixin = {
 
     const closeDeleteModal = (ev) => {
         if(ev) { ev.preventDefault(); ev.stopPropagation(); } 
+        removeFocus();
         this._modalXoaPlaylist.show = false; 
         this._veGiaoDien(); 
     };
@@ -1441,7 +1486,5 @@ export const TabMediaMixin = {
             btnSubmit.disabled = false;
         }
     });
-
-    this._cuonToiBaiDangPhat();
   }
 };
