@@ -623,6 +623,8 @@ refresh_state:
     entity:
       integration: esp32_aibox_media_controller
       domain: media_player
+
+
 playlist_list:
   name: "Get Playlist Library"
   description: "Lấy danh sách các playlist đã lưu."

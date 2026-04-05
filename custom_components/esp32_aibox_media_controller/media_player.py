@@ -11,19 +11,21 @@ from typing import Any
 
 import voluptuous as vol
 
+import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers import entity_platform
+
 from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
     MediaPlayerState,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
-import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers import entity_platform
+from homeassistant.const import CONF_NAME
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.storage import Store # Thêm thư viện lưu trữ của HA
 
 from .api import Esp32AiboxApiClient, Esp32AiboxApiError
 from .const import (
@@ -131,6 +133,9 @@ MEDIA_ACTION_TO_KEYCODE: dict[str, int] = {
 
 _LOGGER = logging.getLogger(__name__)
 
+# Cấu hình lưu trữ
+STORAGE_VERSION = 1
+STORAGE_KEY_PREFIX = "esp32_aibox_playlists"
 
 def _tinh_nang_dau_tien(*names: str) -> MediaPlayerEntityFeature:
     """Return first available media player feature flag from names."""
@@ -420,6 +425,28 @@ async def async_setup_entry(
         "async_refresh_state",
     )
 
+    platform.async_register_entity_service("playlist_list", {}, "async_playlist_list")
+    platform.async_register_entity_service("playlist_get_songs", {"playlist_id": cv.string}, "async_playlist_get_songs")
+    platform.async_register_entity_service("playlist_create", {"name": cv.string}, "async_playlist_create")
+    platform.async_register_entity_service("playlist_delete", {"playlist_id": cv.string}, "async_playlist_delete")
+    
+    platform.async_register_entity_service("playlist_add_song", {
+        "playlist_id": cv.string,
+        "source": cv.string,
+        "id": cv.string,
+        vol.Optional("title"): cv.string,
+        vol.Optional("artist"): cv.string,
+        vol.Optional("thumbnail_url"): cv.string,
+        vol.Optional("duration_seconds"): vol.Coerce(int)
+    }, "async_playlist_add_song")
+    
+    platform.async_register_entity_service("playlist_remove_song", {
+        "playlist_id": cv.string,
+        "song_index": vol.Coerce(int)
+    }, "async_playlist_remove_song")
+    
+    platform.async_register_entity_service("playlist_play", {"playlist_id": cv.string}, "async_playlist_play")
+
 
 class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlayerEntity):
     """Representation of ESP32 AIBox as media player."""
@@ -479,6 +506,43 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
         self._led_state: dict[str, Any] = {}
         self._stereo_state: dict[str, Any] = {}
         self._system_state: dict[str, Any] = {}
+        
+        # Biến quản lý trạng thái hiển thị Playlist
+        self._playlist_library: dict[str, Any] = {}
+        self._playlist_detail: dict[str, Any] = {}
+        self._last_playlist_event: dict[str, Any] = {}
+
+        # Dữ liệu vật lý cho Storage
+        self._stored_playlists: list[dict[str, Any]] = []
+        self._stored_items: dict[str, list[dict[str, Any]]] = {}
+        self._store = None
+
+    async def async_added_to_hass(self) -> None:
+        """Load data from storage when entity is added."""
+        await super().async_added_to_hass()
+        self._store = Store(
+            self.hass, 
+            STORAGE_VERSION, 
+            f"{STORAGE_KEY_PREFIX}_{self._entry.entry_id}"
+        )
+        
+        data = await self._store.async_load()
+        if data:
+            self._stored_playlists = data.get("playlists", [])
+            self._stored_items = data.get("items", {})
+        else:
+            self._stored_playlists = []
+            self._stored_items = {}
+            
+        await self.async_playlist_list()
+
+    async def _async_save_playlists(self) -> None:
+        """Save playlist data to storage."""
+        if self._store:
+            await self._store.async_save({
+                "playlists": self._stored_playlists,
+                "items": self._stored_items
+            })
 
     @property
     def available(self) -> bool:
@@ -572,6 +636,14 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
         edge_light = self._system_state.get("edge_light")
         if isinstance(edge_light, dict) and edge_light:
             attrs["edge_light"] = dict(edge_light)
+
+        # Đẩy dữ liệu Playlist ra Attributes
+        if self._playlist_library:
+            attrs["playlist_library"] = self._playlist_library
+        if self._playlist_detail:
+            attrs["playlist_detail"] = self._playlist_detail
+        if self._last_playlist_event:
+            attrs["last_playlist_event"] = self._last_playlist_event
 
         return attrs
 
@@ -1430,3 +1502,129 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
         last_search = self._last_search or {}
         search_source = str(last_search.get("source", "")).strip().lower()
         return search_source in {"youtube", "youtube_playlist", "zingmp3"}
+
+    # ==========================================
+    # LƯU TRỮ VÀ QUẢN LÝ PLAYLIST
+    # ==========================================
+    async def async_playlist_list(self):
+        # Cập nhật số lượng bài hát
+        for pl in self._stored_playlists:
+            pl["song_count"] = len(self._stored_items.get(str(pl["id"]), []))
+            
+        self._playlist_library = {
+            "updated_at_ms": int(time.time() * 1000),
+            "success": True,
+            "playlists": self._stored_playlists
+        }
+        self.async_write_ha_state()
+
+    async def async_playlist_get_songs(self, playlist_id):
+        pid = str(playlist_id)
+        name = "Playlist"
+        for pl in self._stored_playlists:
+            if str(pl["id"]) == pid:
+                name = pl.get("name", "Playlist")
+                break
+                
+        self._playlist_detail = {
+            "updated_at_ms": int(time.time() * 1000),
+            "success": True,
+            "playlist_id": pid,
+            "playlist_name": name,
+            "items": self._stored_items.get(pid, [])
+        }
+        self.async_write_ha_state()
+
+    async def async_playlist_create(self, name):
+        new_id = str(int(time.time()))
+        self._stored_playlists.append({
+            "id": new_id, 
+            "name": name, 
+            "song_count": 0
+        })
+        self._stored_items[new_id] = []
+        await self._async_save_playlists()
+        
+        self._last_playlist_event = {
+            "updated_at_ms": int(time.time() * 1000),
+            "type": "playlist_created",
+            "playlist_id": new_id,
+            "success": True
+        }
+        self.async_write_ha_state()
+
+    async def async_playlist_delete(self, playlist_id):
+        pid = str(playlist_id)
+        self._stored_playlists = [pl for pl in self._stored_playlists if str(pl["id"]) != pid]
+        if pid in self._stored_items:
+            del self._stored_items[pid]
+        await self._async_save_playlists()
+        
+        self._last_playlist_event = {
+            "updated_at_ms": int(time.time() * 1000),
+            "type": "playlist_deleted",
+            "playlist_id": pid,
+            "success": True
+        }
+        self.async_write_ha_state()
+
+    async def async_playlist_add_song(self, playlist_id, source, id, title="", artist="", thumbnail_url="", duration_seconds=0):
+        pid = str(playlist_id)
+        if pid not in self._stored_items:
+            self._stored_items[pid] = []
+            
+        song_data = {
+            "source": source,
+            "id": id,
+            "title": title,
+            "artist": artist,
+            "thumbnail_url": thumbnail_url,
+            "duration_seconds": duration_seconds,
+            "index": len(self._stored_items[pid]),
+            "kind": "track"
+        }
+        
+        self._stored_items[pid].append(song_data)
+        await self._async_save_playlists()
+        
+        self._last_playlist_event = {
+            "updated_at_ms": int(time.time() * 1000),
+            "type": "playlist_song_added",
+            "playlist_id": pid,
+            "success": True
+        }
+        self.async_write_ha_state()
+
+    async def async_playlist_remove_song(self, playlist_id, song_index):
+        pid = str(playlist_id)
+        idx = int(song_index)
+        
+        if pid in self._stored_items:
+            items = self._stored_items[pid]
+            if 0 <= idx < len(items):
+                items.pop(idx)
+                # Đánh lại index
+                for i, it in enumerate(items):
+                    it["index"] = i
+                await self._async_save_playlists()
+                
+        self._last_playlist_event = {
+            "updated_at_ms": int(time.time() * 1000),
+            "type": "playlist_song_removed",
+            "playlist_id": pid,
+            "success": True
+        }
+        self.async_write_ha_state()
+
+    async def async_playlist_play(self, playlist_id):
+        pid = str(playlist_id)
+        items = self._stored_items.get(pid, [])
+        if items:
+            first_song = items[0]
+            source = str(first_song.get("source")).lower()
+            song_id = first_song.get("id")
+            
+            if source in ("zing", "zingmp3"):
+                await self.async_play_zing(song_id)
+            else:
+                await self.async_play_youtube(song_id)
