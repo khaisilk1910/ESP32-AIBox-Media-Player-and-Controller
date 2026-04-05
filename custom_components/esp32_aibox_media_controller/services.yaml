@@ -623,3 +623,102 @@ refresh_state:
     entity:
       integration: esp32_aibox_media_controller
       domain: media_player
+playlist_list:
+  name: "Get Playlist Library"
+  description: "Lấy danh sách các playlist đã lưu."
+
+playlist_get_songs:
+  name: "Get Playlist Detail"
+  description: "Lấy danh sách bài hát trong một playlist."
+  fields:
+    playlist_id:
+      name: "Playlist ID"
+      description: "ID của playlist cần lấy."
+      required: true
+      selector:
+        text:
+
+playlist_create:
+  name: "Create Playlist"
+  description: "Tạo playlist mới."
+  fields:
+    name:
+      name: "Tên playlist"
+      required: true
+      selector:
+        text:
+
+playlist_delete:
+  name: "Delete Playlist"
+  description: "Xóa một playlist."
+  fields:
+    playlist_id:
+      name: "Playlist ID"
+      required: true
+      selector:
+        text:
+
+playlist_add_song:
+  name: "Add Song to Playlist"
+  description: "Thêm một bài hát vào playlist."
+  fields:
+    playlist_id:
+      name: "Playlist ID"
+      required: true
+      selector:
+        text:
+    source:
+      name: "Source"
+      required: true
+      selector:
+        text:
+    id:
+      name: "Song/Video ID"
+      required: true
+      selector:
+        text:
+    title:
+      name: "Title"
+      required: false
+      selector:
+        text:
+    artist:
+      name: "Artist"
+      required: false
+      selector:
+        text:
+    thumbnail_url:
+      name: "Thumbnail URL"
+      required: false
+      selector:
+        text:
+    duration_seconds:
+      name: "Duration"
+      required: false
+      selector:
+        number:
+
+playlist_remove_song:
+  name: "Remove Song from Playlist"
+  description: "Xóa bài hát khỏi playlist."
+  fields:
+    playlist_id:
+      name: "Playlist ID"
+      required: true
+      selector:
+        text:
+    song_index:
+      name: "Song Index"
+      required: true
+      selector:
+        number:
+
+playlist_play:
+  name: "Play Playlist"
+  description: "Phát toàn bộ playlist."
+  fields:
+    playlist_id:
+      name: "Playlist ID"
+      required: true
+      selector:
+        text:
