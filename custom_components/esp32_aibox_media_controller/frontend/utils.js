@@ -24,6 +24,7 @@ export const UtilsMixin = {
     this._config.entity = newEntityId;
     this._lastEntityRef = null;
     this._pendingRender = false;
+    this._userIsScrolling = false; // FIX: Reset trạng thái cuộn
     this._xoaHenGioTienDo?.();
     this._liveTrackKey = "";
     this._livePositionSeconds = 0;
@@ -67,6 +68,8 @@ export const UtilsMixin = {
   _xuLyRenderCho() {
     if (!this._pendingRender) return;
     if (this._dangSuaOInputVanBan()) return;
+    if (this._userIsScrolling) return; // FIX: Chặn hàm render chờ nếu đang cuộn
+    
     this._pendingRender = false;
     this._veGiaoDien();
   },

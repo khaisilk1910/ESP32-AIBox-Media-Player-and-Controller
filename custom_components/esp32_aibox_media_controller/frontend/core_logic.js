@@ -45,8 +45,9 @@ export const CoreLogicMixin = {
     const ai = attrs.custom_ai || {};
     const volumeLevel = attrs.volume_level;
 
+    // FIX LỖI GIẬT ÂM LƯỢNG (Volume Jitter): Khóa đồng bộ trong 3 giây sau khi người dùng kéo thanh trượt
     if (typeof volumeLevel === "number") {
-      if (!this._lastVolumeChangeAt || Date.now() - this._lastVolumeChangeAt > 2000) {
+      if (!this._lastVolumeChangeAt || Date.now() - this._lastVolumeChangeAt > 3000) {
         this._volumeLevel = Math.max(0, Math.min(1, volumeLevel));
       }
     }

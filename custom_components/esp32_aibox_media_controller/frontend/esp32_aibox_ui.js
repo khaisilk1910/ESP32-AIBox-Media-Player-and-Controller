@@ -17,6 +17,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._activeTab = "media";
     this._lastEntityRef = null;
     this._pendingRender = false;
+    this._userIsScrolling = false;
 
     // --- Ủy quyền Khởi tạo Trạng thái cho các module ---
     this._khoiTaoTrangThaiMedia?.();
@@ -73,10 +74,20 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._dongBoTuEntity();
 
     if (!changed && !mediaChanged && !this._pendingRender) return;
-    if (this._activeTab === "system" && this._dangTuongTacEq()) { this._pendingRender = true; this._capNhatEqGiaoDien?.(this.shadowRoot); return; }
+    if (this._activeTab === "system" && this._dangTuongTacEq?.()) { this._pendingRender = true; this._capNhatEqGiaoDien?.(this.shadowRoot); return; }
     
-    if (this._dangSuaOInputVanBan()) {
-      const activeId = this.shadowRoot?.activeElement?.id || "";
+    // ĐIỂM SỬA CHỮA CHÍNH CỐT LÕI: Tôn trọng người dùng khi đang cuộn tay/chuột, không được render lại DOM
+    if (this._userIsScrolling) {
+        this._pendingRender = true; 
+        return; 
+    }
+    
+    const activeElement = this.shadowRoot?.activeElement;
+    const isInputFocus = activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA');
+    const dangSuaText = this._mediaQueryFocused || isInputFocus || this._chatDangCompose || this._mediaDangCompose || this._dangSuaOInputVanBan?.();
+
+    if (dangSuaText) {
+      const activeId = activeElement?.id || "";
       
       // Xử lý Focus Tim kiem
       if (activeId === "media-query" && this._activeTab === "media") {
@@ -205,7 +216,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
       <ha-card>
         ${deviceSelectorHtml}
         <div class="top-tabs">
-          ${[{ key: "media", icon: "mdi:music-note", label: "Media" }, { key: "control", icon: "mdi:tune-variant", label: "Control" }, { key: "chat", icon: "mdi:chat-processing", label: "Trò chuyện" }, { key: "system", icon: "mdi:cog", label: "System" }].map((tab) => `<button class="tab-btn ${this._activeTab === tab.key ? "active" : ""}" data-tab="${tab.key}"><ha-icon icon="${tab.icon}"></ha-icon><span>${tab.label}</span></button>`).join("")}
+          ${[{ key: "media", icon: "mdi:music-note", label: "Media" }, { key: "control", icon: "mdi:tune-variant", label: "Control" }, { key: "chat", icon: "mdi:chat-processing", label: "Chat" }, { key: "system", icon: "mdi:cog", label: "System" }].map((tab) => `<button class="tab-btn ${this._activeTab === tab.key ? "active" : ""}" data-tab="${tab.key}"><ha-icon icon="${tab.icon}"></ha-icon><span>${tab.label}</span></button>`).join("")}
         </div>
         ${body}
       </ha-card>
@@ -223,7 +234,6 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     if (this._activeTab === "media") this._cuonToiBaiDangPhat?.();
   }
 
-  // File shell chính chỉ giữ CSS dùng chung cho nhiều file.
   _renderCommonCss() {
     return `
       .mini-btn { border: 1px solid var(--line); border-radius: 10px; background: var(--bg-tile); color: var(--text); font-weight: 700; padding: 6px 10px; font-size: 11px; cursor: pointer; white-space: nowrap; }
