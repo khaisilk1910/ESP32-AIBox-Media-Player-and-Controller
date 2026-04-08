@@ -38,6 +38,15 @@ export const CoreLogicMixin = {
     this._loudnessEnabled = false;
     this._loudnessGain = 0;
     this._pendingSwitches = {};
+    this._refreshEntityPromise = null;
+    this._refreshSchedulePromise = null;
+    this._refreshScheduleTimer = null;
+    this._refreshScheduleResolve = null;
+    this._refreshScheduledAt = 0;
+    this._pendingRefreshOptions = null;
+    this._refreshEntityPromise = null;
+    this._lastRefreshEntityAt = 0;
+    this._lastUpdateEntityAt = 0;
   },
 
   _dongBoTrangThaiThietBi(attrs) {
@@ -80,6 +89,8 @@ export const CoreLogicMixin = {
     const bassConfig = attrs.bass_state || attrs.bassState || audioConfig.bass || {};
     const loudnessConfig = attrs.loudness_state || attrs.loudnessState || audioConfig.loudness || {};
     const edgeLight = attrs.edge_light || attrs.edgeLight || {};
+    const ledState = attrs.led_state || attrs.ledState || {};
+    const stereoState = attrs.stereo_state || attrs.stereoState || attrs.system_stereo || {};
     
     if (Date.now() >= this._eqSyncGuardUntil) {
       this._eqEnabled = this._epKieuBoolean(eqConfig.Eq_Enable ?? eqConfig.sound_effects_eq_enable ?? eqConfig.eq_enable ?? eqConfig.enabled, this._eqEnabled);
@@ -104,6 +115,16 @@ export const CoreLogicMixin = {
     this._edgeLightEnabled = this._epKieuBoolean(edgeLight.enabled ?? edgeLight.enable ?? edgeLight.state, this._edgeLightEnabled);
     const edgeIntensity = this._epKieuSo(edgeLight.intensity ?? edgeLight.value, this._edgeLightIntensity);
     if (Number.isFinite(edgeIntensity)) this._edgeLightIntensity = Math.max(0, Math.min(100, Math.round(edgeIntensity)));
+
+    const ledEnabled = this._epKieuBoolean(ledState.enabled ?? ledState.enable ?? ledState.state, this._ledChoEnabled);
+    this._ledChoEnabled = this._layTrangThaiCongTac("led_enabled", ledEnabled);
+
+    const stereoEnabled = this._epKieuBoolean(stereoState.enabled ?? stereoState.enable ?? stereoState.state, this._stereoEnabled);
+    const stereoReceiver = this._epKieuBoolean(stereoState.receiver_enabled ?? stereoState.receiverEnabled, this._stereoReceiver);
+    this._stereoEnabled = this._layTrangThaiCongTac("stereo_enabled", stereoEnabled);
+    this._stereoReceiver = this._layTrangThaiCongTac("stereo_receiver", stereoReceiver);
+    const stereoDelay = this._epKieuSo(stereoState.sync_delay_ms ?? stereoState.syncDelayMs ?? stereoState.delay, this._stereoDelay);
+    if (Number.isFinite(stereoDelay)) this._stereoDelay = Math.max(0, Math.round(stereoDelay));
   },
 
   // === CÁC HÀM CORE VÀ TIỆN ÍCH THIẾT BỊ ===
@@ -140,9 +161,9 @@ export const CoreLogicMixin = {
     root.querySelectorAll("[data-eq-band]").forEach((slider) => {
       const band = Math.max(0, Math.round(Number(slider.dataset.eqBand || 0)));
       const value = this._layEqLevelTheoBand(band, 0);
-      slider.value = String(value);
+      if (this._eqDraggingBand !== band) slider.value = String(value);
       const valueEl = root.querySelector(`[data-eq-value="${band}"]`);
-      if (valueEl) valueEl.textContent = this._dinhDangEqLevel(value);
+      if (valueEl) valueEl.textContent = this._dinhDangEqLevel(this._eqDraggingBand === band ? slider.value : value);
       const labelEl = root.querySelector(`[data-eq-name="${band}"]`);
       if (labelEl) labelEl.classList.toggle("is-active", band === this._eqBand);
     });
@@ -224,20 +245,103 @@ export const CoreLogicMixin = {
     await this._hass.callService(domain, service, payload);
   },
 
-  async _lamMoiEntity(delayMs = 250, attempts = 1) {
-    if (!this._hass || !this._config) return;
-    const totalAttempts = Math.max(1, Number(attempts) || 1);
-    for (let attempt = 0; attempt < totalAttempts; attempt += 1) {
-      if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+  _ngu(ms = 0) {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+  },
+
+  _gopTuyChonLamMoi(base = {}, extra = {}) {
+    return {
+      ...base,
+      ...extra,
+      minGapMs: Math.max(Number(base?.minGapMs) || 0, Number(extra?.minGapMs) || 0),
+      allowFallback: (base?.allowFallback !== false) && (extra?.allowFallback !== false),
+      force: base?.force === true || extra?.force === true,
+    };
+  },
+
+  async _thucHienLamMoiEntity(options = {}) {
+    if (!this._hass || !this._config) return false;
+    const minGapMs = Math.max(1800, Number(options.minGapMs) || 0);
+    const allowFallback = options.allowFallback !== false;
+    const force = options.force === true;
+    const now = Date.now();
+
+    if (this._refreshEntityPromise) return this._refreshEntityPromise;
+    if (!force && this._lastRefreshEntityAt && now - this._lastRefreshEntityAt < minGapMs) return false;
+
+    this._refreshEntityPromise = (async () => {
       let refreshed = false;
       try {
         await this._goiDichVu("esp32_aibox_media_controller", "refresh_state");
         refreshed = true;
-      } catch (err) { refreshed = false; }
-      if (!refreshed) {
-        await this._hass.callService("homeassistant", "update_entity", { entity_id: this._config.entity });
+      } catch (err) {
+        refreshed = false;
       }
+
+      if (!refreshed && allowFallback) {
+        const updateGapMs = Math.max(minGapMs, 2200);
+        const updateNow = Date.now();
+        if (force || !this._lastUpdateEntityAt || updateNow - this._lastUpdateEntityAt >= updateGapMs) {
+          await this._hass.callService("homeassistant", "update_entity", { entity_id: this._config.entity });
+          this._lastUpdateEntityAt = Date.now();
+        }
+      }
+
+      this._lastRefreshEntityAt = Date.now();
+      return refreshed;
+    })();
+
+    try {
+      return await this._refreshEntityPromise;
+    } finally {
+      this._refreshEntityPromise = null;
     }
+  },
+
+  async _lenLichLamMoiEntity(delayMs = 0, options = {}) {
+    if (!this._hass || !this._config) return false;
+    const normalizedOptions = this._gopTuyChonLamMoi(this._pendingRefreshOptions || {}, options || {});
+    const targetAt = Date.now() + Math.max(0, Number(delayMs) || 0);
+    this._pendingRefreshOptions = normalizedOptions;
+
+    if (!this._refreshSchedulePromise) {
+      this._refreshScheduledAt = targetAt;
+      this._refreshSchedulePromise = new Promise((resolve) => {
+        this._refreshScheduleResolve = resolve;
+      });
+    } else if (!this._refreshScheduledAt || targetAt < this._refreshScheduledAt) {
+      this._refreshScheduledAt = targetAt;
+    }
+
+    if (this._refreshScheduleTimer) clearTimeout(this._refreshScheduleTimer);
+    const waitMs = Math.max(0, this._refreshScheduledAt - Date.now());
+
+    this._refreshScheduleTimer = setTimeout(async () => {
+      const resolve = this._refreshScheduleResolve;
+      const pendingOptions = this._pendingRefreshOptions || {};
+      this._refreshScheduleTimer = null;
+      this._refreshScheduleResolve = null;
+      this._refreshSchedulePromise = null;
+      this._refreshScheduledAt = 0;
+      this._pendingRefreshOptions = null;
+      try {
+        const result = await this._thucHienLamMoiEntity(pendingOptions);
+        resolve?.(result);
+      } catch (err) {
+        resolve?.(false);
+      }
+    }, waitMs);
+
+    return this._refreshSchedulePromise;
+  },
+
+  async _lamMoiEntity(delayMs = 250, attempts = 1, options = {}) {
+    if (!this._hass || !this._config) return false;
+    const totalAttempts = Math.max(1, Number(attempts) || 1);
+    const gapMs = Math.max(1800, Number(options.minGapMs) || 0);
+    const firstDelayMs = Math.max(0, Number(delayMs) || 0);
+    const coalescedDelayMs = firstDelayMs + Math.max(0, totalAttempts - 1) * 320;
+    return this._lenLichLamMoiEntity(coalescedDelayMs, { ...options, minGapMs: gapMs });
   },
 
   _laPhatDangHoatDong(value) {

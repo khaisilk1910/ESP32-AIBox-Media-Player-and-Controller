@@ -43,6 +43,14 @@ export const UtilsMixin = {
     this._lastSystemStateRequestAt = 0;
     this._dangChoKetQuaTimKiem = false;
     this._timKiemDangCho = null;
+    if (this._refreshScheduleTimer) clearTimeout(this._refreshScheduleTimer);
+    this._refreshScheduleTimer = null;
+    this._refreshSchedulePromise = null;
+    this._refreshScheduleResolve = null;
+    this._refreshScheduledAt = 0;
+    this._pendingRefreshOptions = null;
+    this._tabBootstrapState = {};
+    this._forceEnsureForActiveTab = true;
 
     this._dongBoTuEntity();
     this._veGiaoDien();
@@ -63,6 +71,45 @@ export const UtilsMixin = {
   _dangTuongTacEq() {
     const active = this.shadowRoot?.activeElement;
     return Boolean(active?.dataset?.eqBand !== undefined);
+  },
+
+  _datTrangThaiNapTab(tab, patch = {}) {
+    if (!tab) return {};
+    if (!this._tabBootstrapState || typeof this._tabBootstrapState !== "object") this._tabBootstrapState = {};
+    const current = this._tabBootstrapState[tab] || { lastAt: 0, inFlight: false };
+    const next = { ...current, ...patch };
+    this._tabBootstrapState[tab] = next;
+    return next;
+  },
+
+  _danhDauCanNapLaiTab(tab = this._activeTab) {
+    if (!tab) return;
+    this._datTrangThaiNapTab(tab, { lastAt: 0 });
+    if (tab === this._activeTab) this._forceEnsureForActiveTab = true;
+  },
+
+  _layChuKyNapTab(tab = this._activeTab) {
+    if (tab === "chat") return 30000;
+    if (tab === "control" || tab === "system") return 45000;
+    return 60000;
+  },
+
+  _nenNapTab(tab = this._activeTab, force = false) {
+    if (!tab) return false;
+    const state = this._datTrangThaiNapTab(tab);
+    if (state.inFlight) return false;
+    if (force) return true;
+    const now = Date.now();
+    const cycleMs = this._layChuKyNapTab(tab);
+    return !state.lastAt || now - state.lastAt >= cycleMs;
+  },
+
+  _batDauNapTab(tab = this._activeTab) {
+    return this._datTrangThaiNapTab(tab, { inFlight: true, lastAt: Date.now() });
+  },
+
+  _ketThucNapTab(tab = this._activeTab) {
+    return this._datTrangThaiNapTab(tab, { inFlight: false, lastAt: Date.now() });
   },
 
   _xuLyRenderCho() {

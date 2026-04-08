@@ -48,6 +48,8 @@ export const TabMediaMixin = {
     this._modalThemVaoPlaylist = { show: false, song: null, source: null };
     this._modalTaoPlaylist = { show: false };
     this._modalXoaPlaylist = { show: false, id: null };
+    this._currentPlaybackListSignature = "";
+    this._currentPlaybackListIndex = -1;
   },
 
   // Hàm Helper bóc tách JSON từ Home Assistant Attributes
@@ -187,6 +189,47 @@ export const TabMediaMixin = {
     this._capNhatHenGioTienDo();
   },
 
+
+  _taoChuKyDanhSachPhat(list, source = "") {
+    const safeList = Array.isArray(list) ? list : [];
+    const ids = safeList.map((item) => {
+      if (typeof item === 'string') {
+        try { item = JSON.parse(item); } catch (_) { return ''; }
+      }
+      return this._layIdMucMedia(item);
+    }).filter(Boolean);
+    return `${String(source || '').toLowerCase()}|${ids.join('|')}`;
+  },
+
+  _timChiSoDangPhatTrongDanhSach(list, playback, listSource = "") {
+    const safeList = Array.isArray(list) ? list : [];
+    const signature = this._taoChuKyDanhSachPhat(safeList, listSource);
+    const currentTrackId = String(playback?.track_id || '').trim();
+    const currentTitle = String(playback?.title || '').trim().toLowerCase();
+
+    let index = safeList.findIndex((item) => {
+      let parsed = item;
+      if (typeof parsed === 'string') {
+        try { parsed = JSON.parse(parsed); } catch (_) { return false; }
+      }
+      if (!parsed || typeof parsed !== 'object') return false;
+      const itemId = this._layIdMucMedia(parsed);
+      if (currentTrackId && itemId && String(itemId).trim() === currentTrackId) return true;
+      const itemTitle = String(parsed.title || parsed.name || parsed.song_name || '').trim().toLowerCase();
+      return Boolean(!currentTrackId && currentTitle && itemTitle && itemTitle === currentTitle);
+    });
+
+    if (index < 0 && signature && signature === this._currentPlaybackListSignature && this._currentPlaybackListIndex >= 0 && this._currentPlaybackListIndex < safeList.length) {
+      index = this._currentPlaybackListIndex;
+    }
+
+    if (index >= 0) {
+      this._currentPlaybackListSignature = signature;
+      this._currentPlaybackListIndex = index;
+    }
+    return index;
+  },
+
   async _chuyenBaiTuList(huong) { // huong = 1 (next) hoặc -1 (prev)
     const playback = this._thongTinPhat();
     const currentTrackId = playback.track_id;
@@ -207,19 +250,7 @@ export const TabMediaMixin = {
         return;
     }
 
-    let currentIndex = list.findIndex(item => {
-        let parsed = item;
-        if (typeof item === 'string') { try { parsed = JSON.parse(item); } catch(e){} }
-        if (!parsed) return false;
-        
-        let itemId = typeof this._layIdMucMedia === 'function' ? this._layIdMucMedia(parsed) : (parsed.id || parsed.video_id || parsed.song_id || parsed.track_id);
-        if (currentTrackId && itemId && String(itemId) === String(currentTrackId)) return true;
-        
-        let itemTitle = parsed.title || parsed.name || parsed.song_name;
-        if (itemTitle && playback.title && String(itemTitle).trim().toLowerCase() === String(playback.title).trim().toLowerCase()) return true;
-        
-        return false;
-    });
+    let currentIndex = this._timChiSoDangPhatTrongDanhSach(list, playback, listSource);
 
     if (currentIndex !== -1) {
         let nextIndex = currentIndex + huong;
@@ -231,6 +262,8 @@ export const TabMediaMixin = {
         if (!nextItem || typeof nextItem !== 'object') nextItem = {};
 
         const itemSource = nextItem.source || listSource;
+        this._currentPlaybackListSignature = this._taoChuKyDanhSachPhat(list, listSource);
+        this._currentPlaybackListIndex = nextIndex;
         await this._xuLyPhatMuc(nextItem, itemSource);
     } else {
         await this._goiDichVu("media_player", huong === 1 ? "media_next_track" : "media_previous_track");
@@ -298,6 +331,11 @@ export const TabMediaMixin = {
       const itemId = this._layIdMucMedia(item);
       return itemId && (itemId === playId || itemId === aiboxTrackId);
     });
+    const foundIndex = items.findIndex((item) => { const itemId = this._layIdMucMedia(item); return itemId && (itemId === playId || itemId === aiboxTrackId); });
+    if (foundIndex >= 0) {
+      this._currentPlaybackListSignature = this._taoChuKyDanhSachPhat(items, search.source || play.source || aibox.source || '');
+      this._currentPlaybackListIndex = foundIndex;
+    }
 
     if (!byId && !playId) {
       const isLikelyPlaying = String(stateObj?.state || "").toLowerCase() === "playing" || this._laPhatDangHoatDong(aibox.is_playing) || this._laPhatDangHoatDong(aibox.play_state) || this._laPhatDangHoatDong(aibox.state) || String(aibox.state || "").toLowerCase() === "playing";
@@ -590,6 +628,8 @@ export const TabMediaMixin = {
   async _xacNhanXoaPlaylist() {
     const playlistId = this._modalXoaPlaylist.id;
     this._modalXoaPlaylist = { show: false, id: null };
+    this._currentPlaybackListSignature = "";
+    this._currentPlaybackListIndex = -1;
     this._playlistLibraryLoading = true;
     this._veGiaoDien();
     if (playlistId !== null && playlistId !== undefined) {

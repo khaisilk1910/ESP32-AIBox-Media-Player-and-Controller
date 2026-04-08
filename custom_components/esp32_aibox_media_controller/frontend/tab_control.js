@@ -5,18 +5,34 @@ export const TabControlMixin = {
   _khoiTaoTrangThaiControl() {
     this._audioEngineTab = "eq";
     this._lastControlStateRequestAt = 0;
+    this._eqDraggingBand = null;
   },
 
-  async _damBaoTrangThaiDieuKhien() {
+  async _damBaoTrangThaiDieuKhien(force = false) {
     const now = Date.now();
-    if (now - this._lastControlStateRequestAt < 7000) return;
+    const attrs = this._thuocTinh();
+    const hasWake = attrs.wake_word && typeof attrs.wake_word === "object" && Object.keys(attrs.wake_word).length > 0;
+    const hasCustomAi = attrs.custom_ai && typeof attrs.custom_ai === "object" && Object.keys(attrs.custom_ai).length > 0;
+
+    if (!force && hasWake && hasCustomAi && now - this._lastControlStateRequestAt < 45000) return;
+    if (!force && now - this._lastControlStateRequestAt < 12000) return;
     this._lastControlStateRequestAt = now;
+
     try {
-      await this._lamMoiEntity(180);
-      await this._goiDichVu("esp32_aibox_media_controller", "wake_word_get_enabled");
-      await this._goiDichVu("esp32_aibox_media_controller", "wake_word_get_sensitivity");
-      await this._goiDichVu("esp32_aibox_media_controller", "custom_ai_get_enabled");
-      await this._lamMoiEntity(220);
+      await this._lamMoiEntity(0, 1, { minGapMs: 1200 });
+      const freshAttrs = this._thuocTinh();
+      const wakeReady = freshAttrs.wake_word && typeof freshAttrs.wake_word === "object" && Object.keys(freshAttrs.wake_word).length > 0;
+      const aiReady = freshAttrs.custom_ai && typeof freshAttrs.custom_ai === "object" && Object.keys(freshAttrs.custom_ai).length > 0;
+      if (!wakeReady) {
+        await this._goiDichVu("esp32_aibox_media_controller", "wake_word_get_enabled");
+        await this._ngu?.(120);
+        await this._goiDichVu("esp32_aibox_media_controller", "wake_word_get_sensitivity");
+      }
+      if (!aiReady) {
+        await this._ngu?.(120);
+        await this._goiDichVu("esp32_aibox_media_controller", "custom_ai_get_enabled");
+      }
+      if (!wakeReady || !aiReady) await this._lamMoiEntity(180, 1, { minGapMs: 1200 });
     } catch (err) {}
   },
 
@@ -201,22 +217,38 @@ export const TabControlMixin = {
     // EQ bindings inside Control
     root.querySelectorAll("[id^='eq-band-ctrl-']").forEach((slider) => {
       const docBand = Math.max(0, Math.round(Number(slider.dataset.idx || 0)));
+      const commitBand = async (rawValue) => {
+        const band = Math.max(0, Math.min(this._eqBandCount - 1, docBand));
+        const level = this._gioiHanEqLevel(rawValue, this._layEqLevelTheoBand(band, 0));
+        if (!Array.isArray(this._eqBands) || this._eqBands.length < this._eqBandCount) this._eqBands = Array.from({ length: this._eqBandCount }, (_, index) => this._layEqLevelTheoBand(index, 0));
+        this._eqBands[band] = level;
+        this._eqBand = band;
+        this._eqLevel = level;
+        this._eqDraggingBand = band;
+        this._batDauCanhGacDongBoEq(2200);
+        if (!this._eqEnabled) {
+          this._eqEnabled = true;
+          await this._goiDichVu("media_player", "set_eq_enable", { enabled: true });
+        }
+        await this._goiDichVu("media_player", "set_eq_bandlevel", { band, level });
+        await this._lamMoiEntity(260, 1, { minGapMs: 1200, allowFallback: true });
+        this._eqDraggingBand = null;
+        this._xuLyRenderCho?.();
+      };
+      const markDragging = () => { this._eqDraggingBand = docBand; };
+      slider.addEventListener("pointerdown", markDragging);
+      slider.addEventListener("mousedown", markDragging);
+      slider.addEventListener("touchstart", markDragging, { passive: true });
       slider.addEventListener("input", (ev) => {
         const band = Math.max(0, Math.min(this._eqBandCount - 1, docBand));
         const level = this._gioiHanEqLevel(ev.target.value, this._layEqLevelTheoBand(band, 0));
         if (!Array.isArray(this._eqBands) || this._eqBands.length < this._eqBandCount) this._eqBands = Array.from({ length: this._eqBandCount }, (_, index) => this._layEqLevelTheoBand(index, 0));
         this._eqBand = band; this._eqLevel = level; this._eqBands[band] = level;
-        this._batDauCanhGacDongBoEq(1000); this._capNhatEqGiaoDien?.(root);
-        const valEl = root.getElementById(`val-eq-${band}`); if (valEl) valEl.innerText = level;
+        this._batDauCanhGacDongBoEq(2200);
+        const valEl = root.getElementById(`val-eq-${band}`); if (valEl) valEl.innerText = this._dinhDangEqLevel(level);
       });
-      slider.addEventListener("change", async (ev) => {
-        const band = Math.max(0, Math.min(this._eqBandCount - 1, docBand));
-        const level = this._gioiHanEqLevel(ev.target.value, this._layEqLevelTheoBand(band, 0));
-        this._eqBands[band] = level; this._batDauCanhGacDongBoEq(1600);
-        if (!this._eqEnabled) { this._eqEnabled = true; this._capNhatEqGiaoDien?.(root); await this._goiDichVu("media_player", "set_eq_enable", { enabled: true }); }
-        await this._goiDichVu("media_player", "set_eq_bandlevel", { band, level }); await this._lamMoiEntity(220, 2); this._xuLyRenderCho?.();
-      });
-      slider.addEventListener("blur", () => { setTimeout(() => this._xuLyRenderCho?.(), 0); });
+      slider.addEventListener("change", async (ev) => { await commitBand(ev.target.value); });
+      slider.addEventListener("blur", () => { this._eqDraggingBand = null; setTimeout(() => this._xuLyRenderCho?.(), 0); });
     });
     root.querySelectorAll(".ctrl-eq-preset").forEach(el => el.addEventListener("click", async () => await this._apDungEqMau(el.dataset.preset || "")));
 
@@ -235,9 +267,9 @@ export const TabControlMixin = {
       loudGain.addEventListener("change", async (ev) => { await this._goiDichVu("esp32_aibox_media_controller", "set_loudness_gain", { gain: this._loudnessGain }); await this._lamMoiEntity(250, 2); });
     }
 
-    root.getElementById("sw-led-cho")?.addEventListener("change", async (ev) => { this._ledChoEnabled = ev.target.checked; try { await this._goiDichVu("esp32_aibox_media_controller", "led_toggle"); await this._lamMoiEntity(250, 2); } catch (err) {} });
-    root.getElementById("sw-stereo-main")?.addEventListener("change", async (ev) => { this._stereoEnabled = ev.target.checked; try { await this._goiDichVu("esp32_aibox_media_controller", this._stereoEnabled ? "stereo_enable" : "stereo_disable"); await this._lamMoiEntity(250, 2); } catch (err) {} });
-    root.getElementById("sw-stereo-sub")?.addEventListener("change", async (ev) => { this._stereoReceiver = ev.target.checked; try { await this._goiDichVu("esp32_aibox_media_controller", this._stereoReceiver ? "stereo_enable_receiver" : "stereo_disable_receiver"); await this._lamMoiEntity(250, 2); } catch (err) {} });
+    root.getElementById("sw-led-cho")?.addEventListener("change", async (ev) => { const desired = ev.target.checked; this._ledChoEnabled = desired; this._datCongTacCho("led_enabled", desired); try { await this._goiDichVu("esp32_aibox_media_controller", "led_toggle"); await this._lamMoiEntity(250, 2); } catch (err) { this._xoaCongTacCho("led_enabled"); } });
+    root.getElementById("sw-stereo-main")?.addEventListener("change", async (ev) => { const desired = ev.target.checked; this._stereoEnabled = desired; this._datCongTacCho("stereo_enabled", desired); try { await this._goiDichVu("esp32_aibox_media_controller", desired ? "stereo_enable" : "stereo_disable"); await this._lamMoiEntity(250, 2); } catch (err) { this._xoaCongTacCho("stereo_enabled"); } });
+    root.getElementById("sw-stereo-sub")?.addEventListener("change", async (ev) => { const desired = ev.target.checked; this._stereoReceiver = desired; this._datCongTacCho("stereo_receiver", desired); try { await this._goiDichVu("esp32_aibox_media_controller", desired ? "stereo_enable_receiver" : "stereo_disable_receiver"); await this._lamMoiEntity(250, 2); } catch (err) { this._xoaCongTacCho("stereo_receiver"); } });
     root.getElementById("btn-save-delay")?.addEventListener("click", async () => { this._stereoDelay = parseInt(root.getElementById("stereo-delay-input").value) || 0; try { await this._goiDichVu("esp32_aibox_media_controller", "stereo_set_sync_delay", { sync_delay_ms: this._stereoDelay }); await this._lamMoiEntity(250, 2); } catch (err) {} });
 
     // Surround bindings
@@ -275,7 +307,7 @@ export const TabControlMixin = {
         el.addEventListener("change", async (e) => {
             this[prop] = parseInt(e.target.value) || 231;
             try { await this._goiDichVu("media_player", "set_mixer_value", { control_name: controlName, value: this[prop].toString() }); await this._lamMoiEntity(250, 2); } 
-            catch (err) { try { await this._goiDichVu("esp32_aibox_media_controller", "send_command", { type: 'sends', list: [{type: 'setMixerValue', controlName: controlName, value: this[prop].toString()}, {type: 'get_eq_config'}] }); } catch (e2) {} }
+            catch (err) { try { await this._goiDichVu("media_player", "ws_send_payload", { payload: JSON.stringify({ type: "sends", list: [{ type: "setMixerValue", controlName: controlName, value: this[prop].toString() }, { type: "get_eq_config" }] }) }); } catch (e2) {} }
         });
     };
     bindDac("slider-dac-l", "_dacVolL", "DAC Digital Volume L", "val-slider-dac-l");

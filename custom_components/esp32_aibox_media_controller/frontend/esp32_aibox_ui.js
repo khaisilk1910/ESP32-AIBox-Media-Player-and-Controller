@@ -1,4 +1,3 @@
-import { EQ_BAND_LABELS } from './constants.js';
 import { UtilsMixin } from './utils.js';
 import { CoreLogicMixin } from './core_logic.js';
 import { TabMediaMixin } from './tab_media.js';
@@ -18,6 +17,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._lastEntityRef = null;
     this._pendingRender = false;
     this._userIsScrolling = false;
+    this._lastRenderSignature = "";
 
     // --- Ủy quyền Khởi tạo Trạng thái cho các module ---
     this._khoiTaoTrangThaiMedia?.();
@@ -44,6 +44,52 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
 
   getCardSize() { return 12; }
 
+  _taoChuKyRender(stateObj) {
+    if (!stateObj) return '';
+    const attrs = stateObj.attributes || {};
+    const aibox = attrs.aibox_playback || {};
+    const search = attrs.last_music_search || {};
+    const play = attrs.last_music_play || {};
+    const chat = attrs.chat_state || {};
+    const chatItems = Array.isArray(attrs.last_chat_items) ? attrs.last_chat_items : [];
+    const lastChat = chatItems[chatItems.length - 1] || {};
+    const systemMonitor = attrs.system_monitor || attrs.system_stats || {};
+    const wifi = attrs.wifi_status || attrs.system_wifi || {};
+    const alarms = attrs.alarm_list || attrs.system_alarms || [];
+    const scanList = Array.isArray(wifi.scanned_networks) ? wifi.scanned_networks : (Array.isArray(wifi.networks) ? wifi.networks : []);
+    const savedList = Array.isArray(wifi.saved_networks) ? wifi.saved_networks : (Array.isArray(wifi.saved) ? wifi.saved : []);
+    const alarmList = Array.isArray(alarms) ? alarms : (Array.isArray(alarms.alarms) ? alarms.alarms : []);
+    return [
+      String(stateObj.state || ''),
+      String(attrs.media_title || ''),
+      String(attrs.media_artist || ''),
+      String(aibox.id || aibox.video_id || aibox.song_id || aibox.track_id || ''),
+      String(aibox.state || aibox.play_state || aibox.is_playing || ''),
+      String(play.id || play.video_id || play.song_id || play.track_id || ''),
+      String(play.source || ''),
+      String(search.updated_at_ms || search.updatedAtMs || search.updated_at || search.updatedAt || ''),
+      String(Array.isArray(search.items) ? search.items.length : 0),
+      String(chat.state || chat.chat_state || chat.status || ''),
+      String(chat.button_text || chat.buttonText || ''),
+      String(chat.button_enabled ?? chat.buttonEnabled ?? ''),
+      String(chat.test_mic_state || chat.testMicState || ''),
+      String(chat.tiktok_reply_enabled ?? chat.tiktokReplyEnabled ?? attrs.tiktok_reply_enabled ?? ''),
+      String(chatItems.length),
+      String(lastChat.ts || ''),
+      String(lastChat.message_type || lastChat.role || ''),
+      String(lastChat.content || lastChat.message || ''),
+      String((attrs.chat_background || '').slice(0, 12)),
+      String(systemMonitor.updated_at_ms || systemMonitor.updatedAtMs || ''),
+      String(systemMonitor.cpu_percent || systemMonitor.cpuPercent || ''),
+      String(systemMonitor.ram_percent || systemMonitor.ramPercent || ''),
+      String(scanList.length),
+      String(savedList.length),
+      String(alarmList.length),
+      String(attrs.last_playlist_event?.updated_at_ms || attrs.last_playlist_event?.updatedAtMs || ''),
+    ].join('||');
+  }
+
+
   setConfig(config) {
     if (!config || !config.entity) throw new Error("ESP32 AIBox Card: 'entity' is required");
     this._config = { ...config };
@@ -65,8 +111,10 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     if (!this._config) return;
 
     const entityRef = this._doiTuongTrangThai();
-    const changed = entityRef !== this._lastEntityRef;
+    const renderSignature = this._taoChuKyRender(entityRef);
+    const changed = renderSignature !== this._lastRenderSignature;
     this._lastEntityRef = entityRef;
+    this._lastRenderSignature = renderSignature;
 
     // --- Kiểm tra thay đổi của Media (Uỷ quyền) ---
     const mediaChanged = this._kiemTraThayDoiTrangThaiMedia?.(entityRef) || false;
@@ -74,7 +122,6 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._dongBoTuEntity();
 
     if (!changed && !mediaChanged && !this._pendingRender) return;
-    if (this._activeTab === "system" && this._dangTuongTacEq?.()) { this._pendingRender = true; this._capNhatEqGiaoDien?.(this.shadowRoot); return; }
     
     // ĐIỂM SỬA CHỮA CHÍNH CỐT LÕI: Tôn trọng người dùng khi đang cuộn tay/chuột, không được render lại DOM
     if (this._userIsScrolling) {
@@ -95,8 +142,8 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
         if (handled) return;
       }
       
-      // Xử lý Focus Chat
-      if (activeId === "chatInput" && this._activeTab === "chat") { this._pendingRender = false; this._veGiaoDienGiuFocusChat?.(); return; }
+      // Xử lý Focus Chat: không render lại trong lúc đang nhập để tránh nhảy con trỏ/cuộn
+      if (activeId === "chatInput" && this._activeTab === "chat") { this._pendingRender = changed || mediaChanged; return; }
       this._pendingRender = true; return;
     }
 
@@ -190,6 +237,8 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
         <button id="btn-next-device" class="device-nav-btn"><ha-icon icon="mdi:chevron-right"></ha-icon></button>
       </div>` : '';
 
+    const chatScrollState = this._activeTab === "chat" ? this._layTrangThaiCuonChat?.() : null;
+
     this.shadowRoot.innerHTML = `
       <style>
         :host { --bg-card: ${c_card_bg_var}; --bg-soft: ${c_tile_bg}; --bg-tile: ${c_tile_bg}; --line: ${c_line}; --text: ${c_text}; --muted: ${c_muted}; --accent: ${c_accent}; --input-bg: ${c_input_bg}; display: block; width: 100%; max-width: none; }
@@ -230,7 +279,7 @@ class ESP32AIBoxMediaPlayerControllerCard extends HTMLElement {
     this._dongBoTienDoDom?.();
     this._capNhatHenGioTienDo?.();
 
-    if (this._activeTab === "chat") this._veLive2DChoChat?.();
+    if (this._activeTab === "chat") { this._phucHoiTrangThaiCuonChat?.(chatScrollState); this._veLive2DChoChat?.(); }
     if (this._activeTab === "media") this._cuonToiBaiDangPhat?.();
   }
 
