@@ -105,7 +105,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: Esp32AiboxConfigEntry) -
             return fallback
 
     ver_card = await hass.async_add_executor_job(
-        get_file_version, "esp32-aibox-controller.js", fallback_version
+        get_file_version, "esp32_aibox_ui.js", fallback_version
     )
 
     await init_resource(hass, f"{UI_URL_BASE}/esp32_aibox_ui.js", ver_card)
@@ -149,6 +149,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: Esp32AiboxConfigEntry) -
             )
         ),
     )
+    client.set_push_update_callback(coordinator.async_handle_aibox_push)
+    await client.async_start()
     try:
         await coordinator.async_config_entry_first_refresh()
     except Exception as err:  # noqa: BLE001
@@ -177,8 +179,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: Esp32AiboxConfigEntry) 
     """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
-        if not hass.data[DOMAIN]:
+        entry_data = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        client = entry_data.get("client") if isinstance(entry_data, dict) else None
+        if client is not None:
+            await client.async_close()
+        if DOMAIN in hass.data and not hass.data[DOMAIN]:
             hass.data.pop(DOMAIN, None)
     return unload_ok
 

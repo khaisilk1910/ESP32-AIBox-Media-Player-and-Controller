@@ -724,3 +724,447 @@ playlist_play:
       required: true
       selector:
         text:
+
+alarm_list:
+  name: Get alarms
+  description: Query current alarm list from AiboxPlus.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+alarm_stop:
+  name: Stop active alarm
+  description: Stop the currently ringing alarm.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+alarm_add:
+  name: Add alarm
+  description: Create a new alarm on the device.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+  fields:
+    hour:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 23
+          mode: box
+    minute:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 59
+          mode: box
+    repeat:
+      required: false
+      selector:
+        text:
+    label:
+      required: false
+      selector:
+        text:
+    volume:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: box
+    custom_sound_path:
+      required: false
+      selector:
+        text:
+    youtube_song_name:
+      required: false
+      selector:
+        text:
+    selected_days:
+      required: false
+      selector:
+        object:
+
+alarm_edit:
+  name: Edit alarm
+  description: Update an existing alarm on the device.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+  fields:
+    alarm_id:
+      required: true
+      selector:
+        text:
+    hour:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 23
+          mode: box
+    minute:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 59
+          mode: box
+    repeat:
+      required: false
+      selector:
+        text:
+    label:
+      required: false
+      selector:
+        text:
+    volume:
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: box
+    custom_sound_path:
+      required: false
+      selector:
+        text:
+    youtube_song_name:
+      required: false
+      selector:
+        text:
+    selected_days:
+      required: false
+      selector:
+        object:
+
+alarm_delete:
+  name: Delete alarm
+  description: Delete an alarm from the device.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+  fields:
+    alarm_id:
+      required: true
+      selector:
+        text:
+
+alarm_toggle:
+  name: Toggle alarm
+  description: Enable or disable one alarm.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+  fields:
+    alarm_id:
+      required: true
+      selector:
+        text:
+
+alarm_upload_sound:
+  name: Upload alarm sound
+  description: Upload a custom alarm sound file encoded as base64.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+  fields:
+    file_name:
+      required: true
+      selector:
+        text:
+    file_data:
+      required: true
+      selector:
+        text:
+    alarm_id:
+      required: false
+      selector:
+        number:
+          mode: box
+
+ota_get:
+  name: Get OTA config
+  description: Query OTA URL configuration from the device.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+ota_set:
+  name: Set OTA config
+  description: Save OTA URL configuration to the device.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+  fields:
+    ota_url:
+      required: true
+      selector:
+        text:
+
+mac_get:
+  name: Get MAC
+  description: Query current MAC information.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+mac_random:
+  name: Random MAC
+  description: Generate a custom MAC address.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+mac_clear:
+  name: Clear custom MAC
+  description: Restore the hardware MAC address.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+hass_get:
+  name: Get Home Assistant config
+  description: Query Home Assistant bridge configuration.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+hass_set:
+  name: Set Home Assistant config
+  description: Save Home Assistant bridge configuration.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+  fields:
+    url:
+      required: false
+      selector:
+        text:
+    api_key:
+      required: false
+      selector:
+        text:
+    agent_id:
+      required: false
+      selector:
+        text:
+
+weather_province_get:
+  name: Get weather province
+  description: Query the stored province used for weather.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+weather_province_set:
+  name: Set weather province
+  description: Save the province used for weather.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+  fields:
+    name:
+      required: false
+      selector:
+        text:
+    lat:
+      required: false
+      selector:
+        number:
+          mode: box
+    lon:
+      required: false
+      selector:
+        number:
+          mode: box
+
+wifi_scan:
+  name: Scan WiFi
+  description: Scan nearby WiFi networks.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+wifi_connect:
+  name: Connect WiFi
+  description: Connect to a WiFi network or reconnect to a saved one.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+  fields:
+    ssid:
+      required: false
+      selector:
+        text:
+    password:
+      required: false
+      selector:
+        text:
+    security_type:
+      required: false
+      selector:
+        text:
+    network_id:
+      required: false
+      selector:
+        number:
+          mode: box
+
+wifi_get_status:
+  name: Get WiFi status
+  description: Query current WiFi and AP status.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+wifi_get_saved:
+  name: Get saved WiFi
+  description: Query saved WiFi networks.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+wifi_delete_saved:
+  name: Delete saved WiFi
+  description: Delete a saved WiFi network.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+  fields:
+    ssid:
+      required: false
+      selector:
+        text:
+    network_id:
+      required: false
+      selector:
+        number:
+          mode: box
+
+wifi_start_ap:
+  name: Start WiFi AP
+  description: Enable AP mode on the device.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+wifi_stop_ap:
+  name: Stop WiFi AP
+  description: Disable AP mode on the device.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+set_led_state:
+  name: Set LED state
+  description: Force LED indicator to a specific state.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+  fields:
+    enabled:
+      required: true
+      selector:
+        boolean:
+
+tiktok_reply_toggle:
+  name: Toggle TikTok reply
+  description: Enable or disable TikTok auto reply on device.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+  fields:
+    enabled:
+      required: true
+      selector:
+        boolean:
+
+upload_chat_background:
+  name: Upload chat background
+  description: Upload a base64 image to be used as chat background.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+  fields:
+    image:
+      required: true
+      selector:
+        text:
+
+get_chat_background:
+  name: Get chat background
+  description: Load the current chat background image from device.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+remove_chat_background:
+  name: Remove chat background
+  description: Remove the current chat background image from device.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+
+stereo_enable_receiver:
+  name: Stereo enable receiver
+  description: Enable stereo receiver/slave mode.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+stereo_disable_receiver:
+  name: Stereo disable receiver
+  description: Disable stereo receiver/slave mode.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+
+stereo_set_sync_delay:
+  name: Stereo set sync delay
+  description: Set stereo synchronization delay in milliseconds.
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
+  fields:
+    sync_delay_ms:
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: box

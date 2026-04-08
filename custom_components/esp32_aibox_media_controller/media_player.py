@@ -66,6 +66,10 @@ SERVICE_CHAT_TEST_MIC = "chat_test_mic"
 SERVICE_CHAT_GET_STATE = "chat_get_state"
 SERVICE_CHAT_SEND_TEXT = "chat_send_text"
 SERVICE_CHAT_GET_HISTORY = "chat_get_history"
+SERVICE_TIKTOK_REPLY_TOGGLE = "tiktok_reply_toggle"
+SERVICE_UPLOAD_CHAT_BACKGROUND = "upload_chat_background"
+SERVICE_GET_CHAT_BACKGROUND = "get_chat_background"
+SERVICE_REMOVE_CHAT_BACKGROUND = "remove_chat_background"
 SERVICE_SET_DLNA = "set_dlna"
 SERVICE_SET_AIRPLAY = "set_airplay"
 SERVICE_SET_BLUETOOTH = "set_bluetooth"
@@ -93,6 +97,30 @@ SERVICE_STEREO_DISABLE = "stereo_disable"
 SERVICE_STEREO_SET_CHANNEL = "stereo_set_channel"
 SERVICE_STEREO_GET_STATE = "stereo_get_state"
 SERVICE_REFRESH_STATE = "refresh_state"
+SERVICE_ALARM_LIST = "alarm_list"
+SERVICE_ALARM_STOP = "alarm_stop"
+SERVICE_ALARM_ADD = "alarm_add"
+SERVICE_ALARM_EDIT = "alarm_edit"
+SERVICE_ALARM_DELETE = "alarm_delete"
+SERVICE_ALARM_TOGGLE = "alarm_toggle"
+SERVICE_ALARM_UPLOAD_SOUND = "alarm_upload_sound"
+SERVICE_OTA_GET = "ota_get"
+SERVICE_OTA_SET = "ota_set"
+SERVICE_MAC_GET = "mac_get"
+SERVICE_MAC_RANDOM = "mac_random"
+SERVICE_MAC_CLEAR = "mac_clear"
+SERVICE_HASS_GET = "hass_get"
+SERVICE_HASS_SET = "hass_set"
+SERVICE_WEATHER_PROVINCE_GET = "weather_province_get"
+SERVICE_WEATHER_PROVINCE_SET = "weather_province_set"
+SERVICE_WIFI_SCAN = "wifi_scan"
+SERVICE_WIFI_CONNECT = "wifi_connect"
+SERVICE_WIFI_GET_STATUS = "wifi_get_status"
+SERVICE_WIFI_GET_SAVED = "wifi_get_saved"
+SERVICE_WIFI_DELETE_SAVED = "wifi_delete_saved"
+SERVICE_WIFI_START_AP = "wifi_start_ap"
+SERVICE_WIFI_STOP_AP = "wifi_stop_ap"
+SERVICE_SET_LED_STATE = "set_led_state"
 
 ATTR_KEYCODE = "keycode"
 ATTR_COMMAND = "command"
@@ -108,6 +136,7 @@ ATTR_VIDEO_ID = "video_id"
 ATTR_SONG_ID = "song_id"
 ATTR_SENSITIVITY = "sensitivity"
 ATTR_TEXT = "text"
+ATTR_IMAGE = "image"
 ATTR_ENABLED = "enabled"
 ATTR_MODE = "mode"
 ATTR_SPEED = "speed"
@@ -121,6 +150,28 @@ ATTR_CONTROL_NAME = "control_name"
 ATTR_VALUE = "value"
 ATTR_POSITION = "position"
 ATTR_CHANNEL = "channel"
+ATTR_ALARM_ID = "alarm_id"
+ATTR_HOUR = "hour"
+ATTR_MINUTE = "minute"
+ATTR_REPEAT = "repeat"
+ATTR_LABEL = "label"
+ATTR_VOLUME = "volume"
+ATTR_CUSTOM_SOUND_PATH = "custom_sound_path"
+ATTR_YOUTUBE_SONG_NAME = "youtube_song_name"
+ATTR_SELECTED_DAYS = "selected_days"
+ATTR_FILE_NAME = "file_name"
+ATTR_FILE_DATA = "file_data"
+ATTR_OTA_URL = "ota_url"
+ATTR_URL = "url"
+ATTR_AGENT_ID = "agent_id"
+ATTR_API_KEY = "api_key"
+ATTR_NAME = "name"
+ATTR_LAT = "lat"
+ATTR_LON = "lon"
+ATTR_SSID = "ssid"
+ATTR_PASSWORD = "password"
+ATTR_SECURITY_TYPE = "security_type"
+ATTR_NETWORK_ID = "network_id"
 
 MEDIA_ACTION_TO_KEYCODE: dict[str, int] = {
     "play": KEYCODE_MEDIA_PLAY_PAUSE,
@@ -281,6 +332,26 @@ async def async_setup_entry(
         "async_chat_get_history",
     )
     platform.async_register_entity_service(
+        SERVICE_TIKTOK_REPLY_TOGGLE,
+        {vol.Required(ATTR_ENABLED): cv.boolean},
+        "async_tiktok_reply_toggle",
+    )
+    platform.async_register_entity_service(
+        SERVICE_UPLOAD_CHAT_BACKGROUND,
+        {vol.Required(ATTR_IMAGE): cv.string},
+        "async_upload_chat_background",
+    )
+    platform.async_register_entity_service(
+        SERVICE_GET_CHAT_BACKGROUND,
+        {},
+        "async_get_chat_background",
+    )
+    platform.async_register_entity_service(
+        SERVICE_REMOVE_CHAT_BACKGROUND,
+        {},
+        "async_remove_chat_background",
+    )
+    platform.async_register_entity_service(
         SERVICE_SET_DLNA,
         {vol.Required(ATTR_ENABLED): cv.boolean},
         "async_set_dlna",
@@ -425,6 +496,166 @@ async def async_setup_entry(
         "async_refresh_state",
     )
 
+
+    platform.async_register_entity_service(
+        SERVICE_ALARM_LIST,
+        {},
+        "async_alarm_list",
+    )
+    platform.async_register_entity_service(
+        SERVICE_ALARM_STOP,
+        {},
+        "async_alarm_stop",
+    )
+    platform.async_register_entity_service(
+        SERVICE_ALARM_ADD,
+        {
+            vol.Required(ATTR_HOUR): vol.All(vol.Coerce(int), vol.Range(min=0, max=23)),
+            vol.Required(ATTR_MINUTE): vol.All(vol.Coerce(int), vol.Range(min=0, max=59)),
+            vol.Optional(ATTR_REPEAT, default="none"): cv.string,
+            vol.Optional(ATTR_LABEL, default=""): cv.string,
+            vol.Optional(ATTR_VOLUME, default=100): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+            vol.Optional(ATTR_CUSTOM_SOUND_PATH): cv.string,
+            vol.Optional(ATTR_YOUTUBE_SONG_NAME): cv.string,
+            vol.Optional(ATTR_SELECTED_DAYS): [cv.string],
+        },
+        "async_alarm_add",
+    )
+    platform.async_register_entity_service(
+        SERVICE_ALARM_EDIT,
+        {
+            vol.Required(ATTR_ALARM_ID): cv.string,
+            vol.Required(ATTR_HOUR): vol.All(vol.Coerce(int), vol.Range(min=0, max=23)),
+            vol.Required(ATTR_MINUTE): vol.All(vol.Coerce(int), vol.Range(min=0, max=59)),
+            vol.Optional(ATTR_REPEAT, default="none"): cv.string,
+            vol.Optional(ATTR_LABEL, default=""): cv.string,
+            vol.Optional(ATTR_VOLUME, default=100): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+            vol.Optional(ATTR_CUSTOM_SOUND_PATH): vol.Any(None, cv.string),
+            vol.Optional(ATTR_YOUTUBE_SONG_NAME): vol.Any(None, cv.string),
+            vol.Optional(ATTR_SELECTED_DAYS): vol.Any(None, [cv.string]),
+        },
+        "async_alarm_edit",
+    )
+    platform.async_register_entity_service(
+        SERVICE_ALARM_DELETE,
+        {vol.Required(ATTR_ALARM_ID): cv.string},
+        "async_alarm_delete",
+    )
+    platform.async_register_entity_service(
+        SERVICE_ALARM_TOGGLE,
+        {vol.Required(ATTR_ALARM_ID): cv.string},
+        "async_alarm_toggle",
+    )
+    platform.async_register_entity_service(
+        SERVICE_ALARM_UPLOAD_SOUND,
+        {
+            vol.Required(ATTR_FILE_NAME): cv.string,
+            vol.Required(ATTR_FILE_DATA): cv.string,
+            vol.Optional(ATTR_ALARM_ID, default=-1): vol.Coerce(int),
+        },
+        "async_alarm_upload_sound",
+    )
+    platform.async_register_entity_service(
+        SERVICE_OTA_GET,
+        {},
+        "async_ota_get",
+    )
+    platform.async_register_entity_service(
+        SERVICE_OTA_SET,
+        {vol.Required(ATTR_OTA_URL): cv.string},
+        "async_ota_set",
+    )
+    platform.async_register_entity_service(
+        SERVICE_MAC_GET,
+        {},
+        "async_mac_get",
+    )
+    platform.async_register_entity_service(
+        SERVICE_MAC_RANDOM,
+        {},
+        "async_mac_random",
+    )
+    platform.async_register_entity_service(
+        SERVICE_MAC_CLEAR,
+        {},
+        "async_mac_clear",
+    )
+    platform.async_register_entity_service(
+        SERVICE_HASS_GET,
+        {},
+        "async_hass_get",
+    )
+    platform.async_register_entity_service(
+        SERVICE_HASS_SET,
+        {
+            vol.Optional(ATTR_URL, default=""): cv.string,
+            vol.Optional(ATTR_API_KEY): cv.string,
+            vol.Optional(ATTR_AGENT_ID, default=""): cv.string,
+        },
+        "async_hass_set",
+    )
+    platform.async_register_entity_service(
+        SERVICE_WEATHER_PROVINCE_GET,
+        {},
+        "async_weather_province_get",
+    )
+    platform.async_register_entity_service(
+        SERVICE_WEATHER_PROVINCE_SET,
+        {
+            vol.Optional(ATTR_NAME, default=""): cv.string,
+            vol.Optional(ATTR_LAT, default=0): vol.Coerce(float),
+            vol.Optional(ATTR_LON, default=0): vol.Coerce(float),
+        },
+        "async_weather_province_set",
+    )
+    platform.async_register_entity_service(
+        SERVICE_WIFI_SCAN,
+        {},
+        "async_wifi_scan",
+    )
+    platform.async_register_entity_service(
+        SERVICE_WIFI_CONNECT,
+        {
+            vol.Optional(ATTR_SSID): cv.string,
+            vol.Optional(ATTR_PASSWORD, default=""): cv.string,
+            vol.Optional(ATTR_SECURITY_TYPE, default="wpa"): cv.string,
+            vol.Optional(ATTR_NETWORK_ID): vol.Coerce(int),
+        },
+        "async_wifi_connect",
+    )
+    platform.async_register_entity_service(
+        SERVICE_WIFI_GET_STATUS,
+        {},
+        "async_wifi_get_status",
+    )
+    platform.async_register_entity_service(
+        SERVICE_WIFI_GET_SAVED,
+        {},
+        "async_wifi_get_saved",
+    )
+    platform.async_register_entity_service(
+        SERVICE_WIFI_DELETE_SAVED,
+        {
+            vol.Optional(ATTR_SSID): cv.string,
+            vol.Optional(ATTR_NETWORK_ID): vol.Coerce(int),
+        },
+        "async_wifi_delete_saved",
+    )
+    platform.async_register_entity_service(
+        SERVICE_WIFI_START_AP,
+        {},
+        "async_wifi_start_ap",
+    )
+    platform.async_register_entity_service(
+        SERVICE_WIFI_STOP_AP,
+        {},
+        "async_wifi_stop_ap",
+    )
+    platform.async_register_entity_service(
+        SERVICE_SET_LED_STATE,
+        {vol.Required(ATTR_ENABLED): cv.boolean},
+        "async_set_led_state",
+    )
     platform.async_register_entity_service("playlist_list", {}, "async_playlist_list")
     platform.async_register_entity_service("playlist_get_songs", {"playlist_id": cv.string}, "async_playlist_get_songs")
     platform.async_register_entity_service("playlist_create", {"name": cv.string}, "async_playlist_create")
@@ -502,6 +733,7 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
         self._custom_ai: dict[str, Any] = {}
         self._chat_state: dict[str, Any] = {}
         self._last_chat_items: list[dict[str, Any]] = []
+        self._chat_background: str = ""
         self._last_play_pause_sent: str | None = None
         self._led_state: dict[str, Any] = {}
         self._stereo_state: dict[str, Any] = {}
@@ -619,13 +851,37 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
             attrs["chat_state"] = merged_chat_state
         if self._last_chat_items:
             attrs["last_chat_items"] = self._last_chat_items
+        attrs["chat_background"] = self._chat_background or ""
 
         aibox_playback = status.aibox_playback if status.aibox_playback else self._client.get_last_aibox_playback()
         if aibox_playback:
             attrs["aibox_playback"] = aibox_playback
 
-        if status.led_state:
-            attrs["led_state"] = status.led_state
+        merged_led_state = {}
+        if isinstance(status.led_state, dict):
+            merged_led_state.update(status.led_state)
+        if self._led_state:
+            merged_led_state.update(self._led_state)
+        if merged_led_state:
+            attrs["led_state"] = merged_led_state
+
+        system_aliases = {
+            "ota_config": ("ota", "ota_state", "system_ota"),
+            "mac_info": ("mac_state", "mac", "system_mac"),
+            "weather_province": ("weather_province_state", "weather_location", "system_weather"),
+            "hass_config": ("hass", "home_assistant", "system_hass"),
+            "wifi_status": ("wifi", "network", "system_wifi"),
+            "alarm_list": ("alarms", "alarm_state", "system_alarms"),
+            "alarm_banner": ("active_alarm", "alarm_triggered"),
+            "system_monitor": ("system_stats", "system_monitor_state"),
+        }
+        for canonical_key, aliases in system_aliases.items():
+            value = self._system_state.get(canonical_key)
+            if value is None or value == {} or value == []:
+                continue
+            attrs[canonical_key] = value
+            for alias in aliases:
+                attrs[alias] = value
 
         merged_audio = dict(self._system_state.get("audio_config") or {})
         if status.audio_state:
@@ -637,7 +893,6 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
         if isinstance(edge_light, dict) and edge_light:
             attrs["edge_light"] = dict(edge_light)
 
-        # Đẩy dữ liệu Playlist ra Attributes
         if self._playlist_library:
             attrs["playlist_library"] = self._playlist_library
         if self._playlist_detail:
@@ -855,6 +1110,7 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
             "items": compact_items,
         }
 
+
     def _lay_audio_config_hien_tai(self) -> dict[str, Any]:
         """Return merged audio config with optimistic fallback."""
         current = dict(self._system_state.get("audio_config") or {})
@@ -893,6 +1149,60 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
         eq_state["Bands"] = bands
         audio_config["eq"] = eq_state
         self._luu_audio_config_cuc_bo(audio_config)
+
+    def _luu_system_payload(self, key: str, payload: Any) -> None:
+        """Store one system payload for Lovelace rendering."""
+        if isinstance(payload, dict):
+            self._system_state[key] = dict(payload)
+        elif isinstance(payload, list):
+            self._system_state[key] = list(payload)
+        else:
+            self._system_state[key] = payload
+
+    def _cap_nhat_system_monitor_cuc_bo(self, response: dict[str, Any]) -> None:
+        if isinstance(response, dict):
+            response = dict(response)
+            response.setdefault("type", "system_monitor")
+            response.setdefault("updated_at_ms", int(time.time() * 1000))
+            self._system_state["system_monitor"] = response
+
+    def _cap_nhat_wifi_state_cuc_bo(self, response: dict[str, Any]) -> None:
+        """Merge WiFi responses from scan/status/saved calls."""
+        current = dict(self._system_state.get("wifi_status") or {})
+        response = dict(response or {})
+        msg_type = str(response.get("type") or "").strip().lower()
+        if msg_type == "wifi_scan_result":
+            current["scanned_networks"] = response.get("networks") if isinstance(response.get("networks"), list) else []
+        elif msg_type == "wifi_saved_result":
+            current["saved_networks"] = response.get("networks") if isinstance(response.get("networks"), list) else []
+        else:
+            current.update(response)
+        current["updated_at_ms"] = int(time.time() * 1000)
+        self._system_state["wifi_status"] = current
+
+    def _cap_nhat_alarm_state_cuc_bo(self, response: dict[str, Any]) -> None:
+        """Merge alarm related responses for Lovelace rendering."""
+        if not isinstance(response, dict):
+            return
+        msg_type = str(response.get("type") or "").strip().lower()
+        if msg_type == "alarm_list":
+            self._system_state["alarm_list"] = dict(response)
+            return
+        if msg_type == "alarm_triggered":
+            banner = dict(response)
+            banner["active"] = True
+            self._system_state["alarm_banner"] = banner
+            return
+        if msg_type == "alarm_stopped":
+            banner = dict(response)
+            banner["active"] = False
+            self._system_state["alarm_banner"] = banner
+            return
+        self._system_state["last_alarm_event"] = dict(response)
+
+    def _clear_alarm_banner(self) -> None:
+        """Hide the active alarm banner in local state."""
+        self._system_state["alarm_banner"] = {"active": False}
 
     async def async_send_keycode(self, keycode: int) -> None:
         """Entity service: send Android keycode."""
@@ -1111,6 +1421,37 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
             self._last_chat_items = merged
         self.async_write_ha_state()
 
+    async def async_tiktok_reply_toggle(self, enabled: bool) -> None:
+        """Entity service: toggle TikTok auto reply."""
+        response = await self._client.async_tiktok_reply_toggle(enabled)
+        self._chat_state["tiktok_reply_enabled"] = self._ep_kieu_bool(
+            response.get("enabled", enabled),
+            bool(enabled),
+        )
+        self._chat_state["last_response_type"] = response.get("type")
+        self.async_write_ha_state()
+
+    async def async_upload_chat_background(self, image: str) -> None:
+        """Entity service: upload chat background image."""
+        response = await self._client.async_upload_chat_background(image)
+        if self._ep_kieu_bool(response.get("success", True), True):
+            self._chat_background = str(image or "")
+        self.async_write_ha_state()
+
+    async def async_get_chat_background(self) -> None:
+        """Entity service: fetch current chat background image."""
+        response = await self._client.async_get_chat_background()
+        image = response.get("image")
+        self._chat_background = "" if image is None else str(image)
+        self.async_write_ha_state()
+
+    async def async_remove_chat_background(self) -> None:
+        """Entity service: remove current chat background image."""
+        response = await self._client.async_remove_chat_background()
+        if self._ep_kieu_bool(response.get("success", True), True):
+            self._chat_background = ""
+        self.async_write_ha_state()
+
     async def async_set_dlna(self, enabled: bool) -> None:
         """Entity service: toggle DLNA autostart."""
         info = await self._client.async_set_dlna(enabled)
@@ -1312,9 +1653,294 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
         self._stereo_state = response
         self.async_write_ha_state()
 
+
+    async def async_alarm_list(self) -> None:
+        """Entity service: fetch configured alarms."""
+        response = await self._client.async_alarm_list()
+        self._cap_nhat_alarm_state_cuc_bo(response)
+        self.async_write_ha_state()
+
+    async def async_alarm_stop(self) -> None:
+        """Entity service: stop active alarm."""
+        response = await self._client.async_alarm_stop()
+        self._cap_nhat_alarm_state_cuc_bo(response)
+        with suppress(Esp32AiboxApiError):
+            follow_up = await self._client.async_alarm_list()
+            self._cap_nhat_alarm_state_cuc_bo(follow_up)
+        self.async_write_ha_state()
+
+    async def async_alarm_add(
+        self,
+        hour: int,
+        minute: int,
+        repeat: str = "none",
+        label: str = "",
+        volume: int = 100,
+        custom_sound_path: str | None = None,
+        youtube_song_name: str | None = None,
+        selected_days: list[str] | None = None,
+    ) -> None:
+        """Entity service: add a new alarm."""
+        response = await self._client.async_alarm_add(
+            hour=hour,
+            minute=minute,
+            repeat=repeat,
+            label=label,
+            volume=volume,
+            custom_sound_path=custom_sound_path,
+            youtube_song_name=youtube_song_name,
+            selected_days=selected_days,
+        )
+        self._cap_nhat_alarm_state_cuc_bo(response)
+        with suppress(Esp32AiboxApiError):
+            follow_up = await self._client.async_alarm_list()
+            self._cap_nhat_alarm_state_cuc_bo(follow_up)
+        self.async_write_ha_state()
+
+    async def async_alarm_edit(
+        self,
+        alarm_id: str,
+        hour: int,
+        minute: int,
+        repeat: str = "none",
+        label: str = "",
+        volume: int = 100,
+        custom_sound_path: str | None = None,
+        youtube_song_name: str | None = None,
+        selected_days: list[str] | None = None,
+    ) -> None:
+        """Entity service: edit an existing alarm."""
+        response = await self._client.async_alarm_edit(
+            alarm_id=alarm_id,
+            hour=hour,
+            minute=minute,
+            repeat=repeat,
+            label=label,
+            volume=volume,
+            custom_sound_path=custom_sound_path,
+            youtube_song_name=youtube_song_name,
+            selected_days=selected_days,
+        )
+        self._cap_nhat_alarm_state_cuc_bo(response)
+        with suppress(Esp32AiboxApiError):
+            follow_up = await self._client.async_alarm_list()
+            self._cap_nhat_alarm_state_cuc_bo(follow_up)
+        self.async_write_ha_state()
+
+    async def async_alarm_delete(self, alarm_id: str) -> None:
+        """Entity service: delete one alarm."""
+        response = await self._client.async_alarm_delete(alarm_id)
+        self._cap_nhat_alarm_state_cuc_bo(response)
+        with suppress(Esp32AiboxApiError):
+            follow_up = await self._client.async_alarm_list()
+            self._cap_nhat_alarm_state_cuc_bo(follow_up)
+        self.async_write_ha_state()
+
+    async def async_alarm_toggle(self, alarm_id: str) -> None:
+        """Entity service: toggle one alarm on/off."""
+        response = await self._client.async_alarm_toggle(alarm_id)
+        self._cap_nhat_alarm_state_cuc_bo(response)
+        with suppress(Esp32AiboxApiError):
+            follow_up = await self._client.async_alarm_list()
+            self._cap_nhat_alarm_state_cuc_bo(follow_up)
+        self.async_write_ha_state()
+
+    async def async_alarm_upload_sound(self, file_name: str, file_data: str, alarm_id: int = -1) -> None:
+        """Entity service: upload custom alarm sound."""
+        response = await self._client.async_alarm_upload_sound(
+            file_name=file_name,
+            file_data=file_data,
+            alarm_id=alarm_id,
+        )
+        self._cap_nhat_alarm_state_cuc_bo(response)
+        self.async_write_ha_state()
+
+    async def async_ota_get(self) -> None:
+        """Entity service: fetch OTA configuration."""
+        response = await self._client.async_ota_get()
+        self._luu_system_payload("ota_config", response)
+        self.async_write_ha_state()
+
+    async def async_ota_set(self, ota_url: str) -> None:
+        """Entity service: update OTA configuration."""
+        response = await self._client.async_ota_set(ota_url)
+        self._luu_system_payload("ota_config", response)
+        self.async_write_ha_state()
+
+    async def async_mac_get(self) -> None:
+        """Entity service: fetch MAC information."""
+        response = await self._client.async_mac_get()
+        self._luu_system_payload("mac_info", response)
+        self.async_write_ha_state()
+
+    async def async_mac_random(self) -> None:
+        """Entity service: randomize MAC address."""
+        response = await self._client.async_mac_random()
+        self._luu_system_payload("mac_info", response)
+        self.async_write_ha_state()
+
+    async def async_mac_clear(self) -> None:
+        """Entity service: restore hardware MAC address."""
+        response = await self._client.async_mac_clear()
+        self._luu_system_payload("mac_info", response)
+        with suppress(Esp32AiboxApiError):
+            follow_up = await self._client.async_mac_get()
+            self._luu_system_payload("mac_info", follow_up)
+        self.async_write_ha_state()
+
+    async def async_hass_get(self) -> None:
+        """Entity service: fetch Home Assistant bridge config."""
+        response = await self._client.async_hass_get()
+        self._luu_system_payload("hass_config", response)
+        self.async_write_ha_state()
+
+    async def async_hass_set(self, url: str = "", api_key: str | None = None, agent_id: str = "") -> None:
+        """Entity service: save Home Assistant bridge config."""
+        response = await self._client.async_hass_set(url=url, api_key=api_key, agent_id=agent_id)
+        self._luu_system_payload("hass_config", response)
+        self.async_write_ha_state()
+
+    async def async_weather_province_get(self) -> None:
+        """Entity service: fetch weather province."""
+        response = await self._client.async_weather_province_get()
+        self._luu_system_payload("weather_province", response)
+        self.async_write_ha_state()
+
+    async def async_weather_province_set(self, name: str = "", lat: float = 0, lon: float = 0) -> None:
+        """Entity service: save weather province."""
+        response = await self._client.async_weather_province_set(name=name, lat=lat, lon=lon)
+        self._luu_system_payload("weather_province", response)
+        self.async_write_ha_state()
+
+    async def async_wifi_scan(self) -> None:
+        """Entity service: scan nearby WiFi networks."""
+        response = await self._client.async_wifi_scan()
+        self._cap_nhat_wifi_state_cuc_bo(response)
+        self.async_write_ha_state()
+
+    async def async_wifi_connect(
+        self,
+        ssid: str | None = None,
+        password: str = "",
+        security_type: str = "wpa",
+        network_id: int | None = None,
+    ) -> None:
+        """Entity service: connect to WiFi."""
+        response = await self._client.async_wifi_connect(
+            ssid=ssid,
+            password=password,
+            security_type=security_type,
+            network_id=network_id,
+        )
+        self._cap_nhat_wifi_state_cuc_bo(response)
+        with suppress(Esp32AiboxApiError):
+            follow_up = await self._client.async_wifi_get_status()
+            self._cap_nhat_wifi_state_cuc_bo(follow_up)
+        with suppress(Esp32AiboxApiError):
+            saved = await self._client.async_wifi_get_saved()
+            self._cap_nhat_wifi_state_cuc_bo(saved)
+        self.async_write_ha_state()
+
+    async def async_wifi_get_status(self) -> None:
+        """Entity service: fetch WiFi status."""
+        response = await self._client.async_wifi_get_status()
+        self._cap_nhat_wifi_state_cuc_bo(response)
+        self.async_write_ha_state()
+
+    async def async_wifi_get_saved(self) -> None:
+        """Entity service: fetch saved WiFi networks."""
+        response = await self._client.async_wifi_get_saved()
+        self._cap_nhat_wifi_state_cuc_bo(response)
+        self.async_write_ha_state()
+
+    async def async_wifi_delete_saved(self, ssid: str | None = None, network_id: int | None = None) -> None:
+        """Entity service: delete one saved WiFi network."""
+        response = await self._client.async_wifi_delete_saved(ssid=ssid, network_id=network_id)
+        self._cap_nhat_wifi_state_cuc_bo(response)
+        with suppress(Esp32AiboxApiError):
+            saved = await self._client.async_wifi_get_saved()
+            self._cap_nhat_wifi_state_cuc_bo(saved)
+        self.async_write_ha_state()
+
+    async def async_wifi_start_ap(self) -> None:
+        """Entity service: enable AP mode."""
+        response = await self._client.async_wifi_start_ap()
+        self._cap_nhat_wifi_state_cuc_bo(response)
+        with suppress(Esp32AiboxApiError):
+            follow_up = await self._client.async_wifi_get_status()
+            self._cap_nhat_wifi_state_cuc_bo(follow_up)
+        self.async_write_ha_state()
+
+    async def async_wifi_stop_ap(self) -> None:
+        """Entity service: disable AP mode."""
+        response = await self._client.async_wifi_stop_ap()
+        self._cap_nhat_wifi_state_cuc_bo(response)
+        with suppress(Esp32AiboxApiError):
+            follow_up = await self._client.async_wifi_get_status()
+            self._cap_nhat_wifi_state_cuc_bo(follow_up)
+        self.async_write_ha_state()
+
+    async def async_led_get_state(self) -> None:
+        """Entity service: get LED state."""
+        response = await self._client.async_led_get_state()
+        self._led_state = response
+        self.async_write_ha_state()
+
+    async def async_stereo_enable(self) -> None:
+        """Entity service: enable stereo pairing."""
+        response = await self._client.async_stereo_enable()
+        self._stereo_state = response
+        self.async_write_ha_state()
+
+    async def async_stereo_disable(self) -> None:
+        """Entity service: disable stereo pairing."""
+        response = await self._client.async_stereo_disable()
+        self._stereo_state = response
+        self.async_write_ha_state()
+
+    async def async_stereo_set_channel(self, channel: str) -> None:
+        """Entity service: set stereo channel (left/right)."""
+        response = await self._client.async_stereo_set_channel(channel)
+        self._stereo_state = response
+        self.async_write_ha_state()
+
+    async def async_stereo_get_state(self) -> None:
+        """Entity service: get stereo pairing state."""
+        response = await self._client.async_stereo_get_state()
+        self._stereo_state = response
+        self.async_write_ha_state()
+
     async def async_refresh_state(self) -> None:
-        """Entity service: force coordinator refresh."""
+        """Entity service: force coordinator refresh and poll System tab data."""
+        with suppress(Esp32AiboxApiError):
+            system_monitor = await self._client.async_get_system_monitor()
+            self._cap_nhat_system_monitor_cuc_bo(system_monitor)
+        with suppress(Esp32AiboxApiError):
+            led_state = await self._client.async_led_get_state()
+            self._led_state = led_state
+        with suppress(Esp32AiboxApiError):
+            alarm_list = await self._client.async_alarm_list()
+            self._cap_nhat_alarm_state_cuc_bo(alarm_list)
+        with suppress(Esp32AiboxApiError):
+            ota = await self._client.async_ota_get()
+            self._luu_system_payload("ota_config", ota)
+        with suppress(Esp32AiboxApiError):
+            mac_info = await self._client.async_mac_get()
+            self._luu_system_payload("mac_info", mac_info)
+        with suppress(Esp32AiboxApiError):
+            hass_cfg = await self._client.async_hass_get()
+            self._luu_system_payload("hass_config", hass_cfg)
+        with suppress(Esp32AiboxApiError):
+            weather = await self._client.async_weather_province_get()
+            self._luu_system_payload("weather_province", weather)
+        with suppress(Esp32AiboxApiError):
+            wifi_status = await self._client.async_wifi_get_status()
+            self._cap_nhat_wifi_state_cuc_bo(wifi_status)
+        with suppress(Esp32AiboxApiError):
+            wifi_saved = await self._client.async_wifi_get_saved()
+            self._cap_nhat_wifi_state_cuc_bo(wifi_saved)
         await self.coordinator.async_request_refresh()
+        self.async_write_ha_state()
 
     async def async_turn_on(self) -> None:
         """Turn the speaker on (power toggle)."""

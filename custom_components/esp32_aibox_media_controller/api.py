@@ -204,11 +204,254 @@ class Esp32AiboxApiClient:
         self._protocol = protocol
         self._timeout = timeout
         self._last_aibox_playback: dict[str, Any] = {}
+        self._system_monitor_last_cpu: tuple[int, int] | None = None
+        self._ws_info_cache: dict[str, Any] | None = None
+        self._ws_info_cache_at = 0.0
+        self._ws_eq_cache: dict[str, Any] | None = None
+        self._ws_eq_cache_at = 0.0
+        self._aibox_cache: dict[str, dict[str, Any]] = {}
+        self._aibox_cache_at: dict[str, float] = {}
+        self._aibox_live_task: asyncio.Task | None = None
+        self._aibox_live_ws = None
+        self._aibox_live_running = False
+        self._aibox_live_lock = asyncio.Lock()
+        self._aibox_live_connected = asyncio.Event()
+        self._push_update_callback: Callable[[dict[str, Any], str | None], Awaitable[None] | None] | None = None
 
     @property
     def protocol(self) -> str:
         """Return configured protocol."""
         return self._protocol
+
+    def set_push_update_callback(
+        self,
+        callback: Callable[[dict[str, Any], str | None], Awaitable[None] | None] | None,
+    ) -> None:
+        """Register callback invoked when live AiboxPlus WS receives state pushes."""
+        self._push_update_callback = callback
+
+    async def async_start(self) -> None:
+        """Start background AiboxPlus listener used to mirror original web app logic."""
+        if self._aibox_live_running:
+            return
+        self._aibox_live_running = True
+        self._aibox_live_task = asyncio.create_task(self._aibox_live_loop())
+
+    async def async_close(self) -> None:
+        """Close background websocket tasks and release resources."""
+        self._aibox_live_running = False
+        task = self._aibox_live_task
+        self._aibox_live_task = None
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+        async with self._aibox_live_lock:
+            ws = self._aibox_live_ws
+            self._aibox_live_ws = None
+            self._aibox_live_connected.clear()
+            if ws is not None and not ws.closed:
+                await ws.close()
+
+    def _aibox_lay_cache(self, section: str, max_age: float | None = None) -> dict[str, Any] | None:
+        """Return copy of cached live section if not stale."""
+        payload = self._aibox_cache.get(section)
+        if not isinstance(payload, dict):
+            return None
+        if max_age is not None:
+            age = time.monotonic() - self._aibox_cache_at.get(section, 0.0)
+            if age > max_age:
+                return None
+        return dict(payload)
+
+    def _aibox_luu_cache(self, section: str, payload: dict[str, Any]) -> None:
+        """Persist one live AiboxPlus section."""
+        normalized = dict(payload)
+        normalized.setdefault('updated_at_ms', int(time.time() * 1000))
+        self._aibox_cache[section] = normalized
+        self._aibox_cache_at[section] = time.monotonic()
+
+    def _aibox_cap_nhat_wifi_cache(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Merge WiFi events into one stable cache payload."""
+        current = dict(self._aibox_cache.get('wifi_status') or {})
+        normalized = dict(payload or {})
+        msg_type = str(normalized.get('type') or normalized.get('action') or '').strip().lower()
+
+        networks = normalized.get('networks') if isinstance(normalized.get('networks'), list) else None
+        if msg_type == 'wifi_scan_result':
+            current['scanned_networks'] = networks or []
+        elif msg_type == 'wifi_saved_result':
+            current['saved_networks'] = networks or []
+        else:
+            current.update({key: value for key, value in normalized.items() if value is not None})
+            if isinstance(normalized.get('scanned_networks'), list):
+                current['scanned_networks'] = list(normalized.get('scanned_networks') or [])
+            elif networks is not None and 'scan' in msg_type:
+                current['scanned_networks'] = networks
+            if isinstance(normalized.get('saved_networks'), list):
+                current['saved_networks'] = list(normalized.get('saved_networks') or [])
+            elif networks is not None and ('saved' in msg_type or 'delete' in msg_type):
+                current['saved_networks'] = networks
+
+        current.setdefault('type', normalized.get('type') or 'wifi_status')
+        current['last_wifi_event_type'] = msg_type or current.get('last_wifi_event_type') or 'wifi_status'
+        current['updated_at_ms'] = int(time.time() * 1000)
+        self._aibox_luu_cache('wifi_status', current)
+        return current
+
+    async def _aibox_cho_cache_section(
+        self,
+        section: str,
+        *,
+        predicate: Callable[[dict[str, Any]], bool],
+        timeout: float = 8.0,
+        interval: float = 0.12,
+        max_age: float | None = None,
+    ) -> dict[str, Any]:
+        """Wait until one cached live section satisfies a predicate."""
+        end = asyncio.get_running_loop().time() + max(0.1, timeout)
+        last_payload: dict[str, Any] = {}
+        while asyncio.get_running_loop().time() < end:
+            cached = self._aibox_lay_cache(section, max_age=max_age)
+            if isinstance(cached, dict):
+                last_payload = cached
+                if predicate(cached):
+                    return cached
+            await asyncio.sleep(max(0.05, interval))
+        raise Esp32AiboxApiConnectionError(f'Timeout waiting for cached section: {section} ({last_payload})')
+
+    async def _aibox_wifi_live_action(
+        self,
+        payload: dict[str, Any],
+        *,
+        predicate: Callable[[dict[str, Any], int], bool],
+        timeout: float,
+    ) -> dict[str, Any] | None:
+        """Send one WiFi command through the persistent WS and wait for merged cache."""
+        before = int((self._aibox_lay_cache('wifi_status') or {}).get('updated_at_ms') or 0)
+        sent = await self._aibox_gui_qua_live(payload)
+        if not sent:
+            return None
+        return await self._aibox_cho_cache_section(
+            'wifi_status',
+            predicate=lambda cached: predicate(cached, before),
+            timeout=timeout,
+            interval=0.12,
+            max_age=max(timeout + 2.0, 10.0),
+        )
+
+    async def _aibox_gui_qua_live(self, payload: dict[str, Any]) -> bool:
+        """Send payload through persistent live websocket when connected."""
+        if not self._aibox_live_running:
+            return False
+        try:
+            await asyncio.wait_for(self._aibox_live_connected.wait(), timeout=0.8)
+        except asyncio.TimeoutError:
+            return False
+        async with self._aibox_live_lock:
+            ws = self._aibox_live_ws
+            if ws is None or ws.closed:
+                return False
+            await ws.send_str(json.dumps(payload, ensure_ascii=False))
+        return True
+
+    async def _aibox_bootstrap_live(self) -> None:
+        """Seed important live state once connection is established."""
+        bootstrap_payloads = [
+            {'action': 'get_playback_state'},
+            {'action': 'chat_get_state'},
+            {'action': 'led_get_state'},
+            {'action': 'wake_word_get_enabled'},
+            {'action': 'wake_word_get_sensitivity'},
+            {'action': 'custom_ai_get_enabled'},
+            {'action': 'wifi_get_status'},
+            {'action': 'wifi_get_saved'},
+            {'action': 'stereo_get_state'},
+        ]
+        for payload in bootstrap_payloads:
+            with suppress(Exception):
+                await self._aibox_gui_qua_live(payload)
+                await asyncio.sleep(0.05)
+
+    async def _aibox_xu_ly_goi_tin_live(self, payload: dict[str, Any]) -> None:
+        """Normalize and cache pushed AiboxPlus state packets."""
+        normalized = self._aibox_chuan_hoa_payload(payload)
+        msg_kind = self._aibox_loai_tin_nhan(normalized)
+        self._aibox_cap_nhat_bo_nho_phat(normalized, msg_kind)
+
+        msg_kind_norm = str(msg_kind or '').strip().lower()
+        if self._aibox_la_payload_tin_nhan_chat(normalized):
+            if any(key in normalized for key in ('button_text', 'buttonText', 'button_enabled', 'buttonEnabled', 'state', 'chat_state', 'status', 'test_mic_state')):
+                self._aibox_luu_cache('chat_state', normalized)
+        elif msg_kind_norm.startswith('chat_'):
+            self._aibox_luu_cache('chat_state', normalized)
+        elif 'wake_word' in msg_kind_norm:
+            self._aibox_luu_cache('wake_word', normalized)
+        elif 'custom_ai' in msg_kind_norm or 'anti_deaf_ai' in msg_kind_norm:
+            self._aibox_luu_cache('custom_ai', normalized)
+        elif msg_kind_norm.startswith('led_'):
+            self._aibox_luu_cache('led_state', normalized)
+        elif msg_kind_norm.startswith('wifi_'):
+            self._aibox_cap_nhat_wifi_cache(normalized)
+        elif msg_kind_norm.startswith('stereo_'):
+            self._aibox_luu_cache('stereo_state', normalized)
+
+        playback_cache = self.get_last_aibox_playback()
+        if playback_cache:
+            self._aibox_luu_cache('aibox_playback', playback_cache)
+
+        callback = self._push_update_callback
+        if callback is not None:
+            try:
+                result = callback(normalized, msg_kind)
+                if asyncio.iscoroutine(result):
+                    asyncio.create_task(result)
+            except Exception:
+                _LOGGER.debug('Aibox push callback failed', exc_info=True)
+
+    async def _aibox_live_loop(self) -> None:
+        """Maintain long-lived AiboxPlus websocket similar to the original web app."""
+        reconnect_attempt = 0
+        while self._aibox_live_running:
+            try:
+                async with self._session.ws_connect(
+                    self._aibox_ws_url,
+                    timeout=self._timeout,
+                    heartbeat=30.0,
+                    autoping=True,
+                ) as ws:
+                    reconnect_attempt = 0
+                    async with self._aibox_live_lock:
+                        self._aibox_live_ws = ws
+                        self._aibox_live_connected.set()
+                    await self._aibox_bootstrap_live()
+                    while self._aibox_live_running:
+                        msg = await ws.receive(timeout=60.0)
+                        if msg.type is WSMsgType.TEXT:
+                            try:
+                                data = json.loads(msg.data)
+                            except json.JSONDecodeError:
+                                continue
+                            if isinstance(data, dict):
+                                await self._aibox_xu_ly_goi_tin_live(data)
+                        elif msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSED, WSMsgType.ERROR):
+                            break
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                _LOGGER.debug('AiboxPlus live websocket disconnected', exc_info=True)
+            finally:
+                async with self._aibox_live_lock:
+                    ws = self._aibox_live_ws
+                    self._aibox_live_ws = None
+                    self._aibox_live_connected.clear()
+                    if ws is not None and not ws.closed:
+                        with suppress(Exception):
+                            await ws.close()
+            if not self._aibox_live_running:
+                break
+            reconnect_attempt += 1
+            await asyncio.sleep(min(12.0, max(1.0, reconnect_attempt * 2.0)))
 
     # ---------------------------
     # HTTP bridge implementation
@@ -587,6 +830,9 @@ class Esp32AiboxApiClient:
 
     async def _aibox_chi_gui(self, payload: dict[str, Any]) -> None:
         """Send message to AiboxPlus WS without waiting for response."""
+        with suppress(Exception):
+            if await self._aibox_gui_qua_live(payload):
+                return
         try:
             async with self._session.ws_connect(self._aibox_ws_url, timeout=self._timeout) as ws:
                 await ws.send_str(json.dumps(payload, ensure_ascii=False))
@@ -700,20 +946,27 @@ class Esp32AiboxApiClient:
             raise Esp32AiboxApiResponseError(str(response.get("msg") or response))
 
     async def _ws_lay_thong_tin(self) -> dict[str, Any]:
-        """Get speaker state from native WS API."""
+        """Get speaker state from native WS API with a short-lived cache."""
+        if self._ws_info_cache is not None and (time.monotonic() - self._ws_info_cache_at) <= 0.8:
+            return dict(self._ws_info_cache)
         response = await self._ws_gui_va_cho({"type": "get_info"}, expect_type="get_info")
         self._ws_kiem_tra_ma(response)
         data = response.get("data")
+        parsed: dict[str, Any] | None = None
         if isinstance(data, str):
             try:
-                parsed = json.loads(data)
-                if isinstance(parsed, dict):
-                    return parsed
+                candidate = json.loads(data)
+                if isinstance(candidate, dict):
+                    parsed = candidate
             except json.JSONDecodeError as err:
                 raise Esp32AiboxApiResponseError("Invalid get_info payload") from err
-        if isinstance(data, dict):
-            return data
-        raise Esp32AiboxApiResponseError("Missing get_info data")
+        elif isinstance(data, dict):
+            parsed = data
+        if parsed is None:
+            raise Esp32AiboxApiResponseError("Missing get_info data")
+        self._ws_info_cache = dict(parsed)
+        self._ws_info_cache_at = time.monotonic()
+        return dict(parsed)
 
     async def _ws_lay_am_luong_toi_da(self) -> int | None:
         """Get max volume if supported."""
@@ -728,6 +981,8 @@ class Esp32AiboxApiClient:
         """Get EQ/Bass/Loudness configuration from native WS API."""
         if self._protocol != PROTOCOL_WS_NATIVE:
             raise Esp32AiboxApiResponseError("EQ config is only available in ws_native mode")
+        if self._ws_eq_cache is not None and (time.monotonic() - self._ws_eq_cache_at) <= 6.0:
+            return dict(self._ws_eq_cache)
 
         response = await self._ws_gui_va_cho({"type": "get_eq_config"}, expect_type="get_eq_config")
         self._ws_kiem_tra_ma(response)
@@ -754,7 +1009,9 @@ class Esp32AiboxApiClient:
 
         if not isinstance(parsed, dict):
             raise Esp32AiboxApiResponseError("Missing get_eq_config data")
-        return parsed
+        self._ws_eq_cache = dict(parsed)
+        self._ws_eq_cache_at = time.monotonic()
+        return dict(parsed)
 
     async def _ws_hanh_dong_media(self, action: str) -> None:
         """Send media action to native WS API."""
@@ -1460,12 +1717,17 @@ class Esp32AiboxApiClient:
 
     async def async_wake_word_get_enabled(self) -> dict[str, Any]:
         """Query wake word enabled state."""
+        cached = self._aibox_lay_cache('wake_word', max_age=12.0)
+        if cached and any(key in cached for key in ('enabled', 'enable', 'state')):
+            return cached
         request = {"action": "wake_word_get_enabled"}
         try:
-            return await self._aibox_gui_va_cho(
+            result = await self._aibox_gui_va_cho(
                 request,
                 expect_type={"wake_word_get_enabled_result", "wake_word_enabled_state"},
             )
+            self._aibox_luu_cache('wake_word', result)
+            return result
         except Esp32AiboxApiConnectionError:
             with suppress(Esp32AiboxApiConnectionError):
                 await self._aibox_chi_gui(request)
@@ -1490,12 +1752,19 @@ class Esp32AiboxApiClient:
 
     async def async_wake_word_get_sensitivity(self) -> dict[str, Any]:
         """Query wake word sensitivity."""
+        cached = self._aibox_lay_cache('wake_word', max_age=12.0)
+        if cached and any(key in cached for key in ('sensitivity', 'value')):
+            return cached
         request = {"action": "wake_word_get_sensitivity"}
         try:
-            return await self._aibox_gui_va_cho(
+            result = await self._aibox_gui_va_cho(
                 request,
                 expect_type={"wake_word_get_sensitivity_result", "wake_word_sensitivity_state"},
             )
+            merged = self._aibox_lay_cache('wake_word') or {}
+            merged.update(result)
+            self._aibox_luu_cache('wake_word', merged)
+            return result
         except Esp32AiboxApiConnectionError:
             with suppress(Esp32AiboxApiConnectionError):
                 await self._aibox_chi_gui(request)
@@ -1537,12 +1806,17 @@ class Esp32AiboxApiClient:
 
     async def async_custom_ai_get_enabled(self) -> dict[str, Any]:
         """Query custom AI enabled state."""
+        cached = self._aibox_lay_cache('custom_ai', max_age=12.0)
+        if cached and any(key in cached for key in ('enabled', 'enable', 'state')):
+            return cached
         request = {"action": "custom_ai_get_enabled"}
         try:
-            return await self._aibox_gui_va_cho(
+            result = await self._aibox_gui_va_cho(
                 request,
                 expect_type={"custom_ai_get_enabled_result", "custom_ai_enabled_state"},
             )
+            self._aibox_luu_cache('custom_ai', result)
+            return result
         except Esp32AiboxApiConnectionError:
             with suppress(Esp32AiboxApiConnectionError):
                 await self._aibox_chi_gui(request)
@@ -1576,12 +1850,17 @@ class Esp32AiboxApiClient:
 
     async def async_chat_get_state(self) -> dict[str, Any]:
         """Get current chat/wake-up state."""
+        cached = self._aibox_lay_cache('chat_state', max_age=8.0)
+        if cached and any(key in cached for key in ('state', 'chat_state', 'status', 'button_text', 'buttonText', 'button_enabled', 'buttonEnabled')):
+            return cached
         request = {"action": "chat_get_state"}
         try:
-            return await self._aibox_gui_va_cho(
+            result = await self._aibox_gui_va_cho(
                 request,
                 expect_type={"chat_state", "chat_get_state_result"},
             )
+            self._aibox_luu_cache('chat_state', result)
+            return result
         except Esp32AiboxApiConnectionError:
             with suppress(Esp32AiboxApiConnectionError):
                 await self._aibox_chi_gui(request)
@@ -1622,12 +1901,73 @@ class Esp32AiboxApiClient:
             return {"items": []}
         return {"items": messages}
 
+
+    async def async_tiktok_reply_toggle(self, enabled: bool) -> dict[str, Any]:
+        """Enable/disable TikTok auto reply."""
+        request = {"action": "tiktok_reply_toggle", "enabled": bool(enabled)}
+        try:
+            return await self._aibox_gui_va_cho(
+                request,
+                expect_type={"tiktok_reply_toggle_result", "tiktok_reply_state"},
+                timeout=8.0,
+            )
+        except Esp32AiboxApiConnectionError:
+            with suppress(Esp32AiboxApiConnectionError):
+                await self._aibox_chi_gui(request)
+            return {"type": "tiktok_reply_toggle_result", "enabled": bool(enabled), "success": False}
+
+    async def async_upload_chat_background(self, image: str) -> dict[str, Any]:
+        """Upload chat background image as base64."""
+        normalized_image = self._dam_bao_khong_rong(image, "image")
+        request = {"action": "upload_chat_background", "image": normalized_image}
+        try:
+            return await self._aibox_gui_va_cho(
+                request,
+                expect_type={"upload_chat_background_result"},
+                timeout=20.0,
+            )
+        except Esp32AiboxApiConnectionError:
+            with suppress(Esp32AiboxApiConnectionError):
+                await self._aibox_chi_gui(request)
+            return {"type": "upload_chat_background_result", "success": False}
+
+    async def async_get_chat_background(self) -> dict[str, Any]:
+        """Get current chat background image from device."""
+        request = {"action": "get_chat_background"}
+        try:
+            return await self._aibox_gui_va_cho(
+                request,
+                expect_type={"get_chat_background_result"},
+                timeout=15.0,
+            )
+        except Esp32AiboxApiConnectionError:
+            with suppress(Esp32AiboxApiConnectionError):
+                await self._aibox_chi_gui(request)
+            return {"type": "get_chat_background_result", "success": False, "image": ""}
+
+    async def async_remove_chat_background(self) -> dict[str, Any]:
+        """Remove chat background image from device."""
+        request = {"action": "remove_chat_background"}
+        try:
+            return await self._aibox_gui_va_cho(
+                request,
+                expect_type={"remove_chat_background_result"},
+                timeout=10.0,
+            )
+        except Esp32AiboxApiConnectionError:
+            with suppress(Esp32AiboxApiConnectionError):
+                await self._aibox_chi_gui(request)
+            return {"type": "remove_chat_background_result", "success": False}
+
     # --------------------------------
     # New feature methods (AiboxPlus)
     # --------------------------------
 
     async def async_aibox_get_playback_state(self) -> dict[str, Any]:
         """Poll current playback state from AiboxPlus."""
+        cached = self._aibox_lay_cache('aibox_playback', max_age=4.0)
+        if cached:
+            return cached
         request = {"action": "get_playback_state"}
         try:
             result = await self._aibox_gui_va_cho(
@@ -1636,6 +1976,7 @@ class Esp32AiboxApiClient:
                 timeout=5.0,
             )
             self._aibox_cap_nhat_bo_nho_phat(result, self._aibox_loai_tin_nhan(result))
+            self._aibox_luu_cache('aibox_playback', self.get_last_aibox_playback() or result)
             return result
         except Esp32AiboxApiConnectionError:
             return dict(self._last_aibox_playback)
@@ -1697,13 +2038,18 @@ class Esp32AiboxApiClient:
 
     async def async_led_get_state(self) -> dict[str, Any]:
         """Get LED state from AiboxPlus."""
+        cached = self._aibox_lay_cache('led_state', max_age=10.0)
+        if cached and 'enabled' in cached:
+            return cached
         request = {"action": "led_get_state"}
         try:
-            return await self._aibox_gui_va_cho(
+            result = await self._aibox_gui_va_cho(
                 request,
                 expect_type={"led_state", "led_get_state_result"},
                 timeout=5.0,
             )
+            self._aibox_luu_cache('led_state', result)
+            return result
         except Esp32AiboxApiConnectionError:
             return {"type": "led_state", "success": False}
 
@@ -1711,11 +2057,13 @@ class Esp32AiboxApiClient:
         """Get stereo pairing state from AiboxPlus."""
         request = {"action": "stereo_get_state"}
         try:
-            return await self._aibox_gui_va_cho(
+            result = await self._aibox_gui_va_cho(
                 request,
                 expect_type={"stereo_state", "stereo_get_state_result"},
                 timeout=5.0,
             )
+            self._aibox_luu_cache('stereo_state', result)
+            return result
         except Esp32AiboxApiConnectionError:
             return {"type": "stereo_state", "success": False}
 
@@ -1757,6 +2105,553 @@ class Esp32AiboxApiClient:
         except Esp32AiboxApiConnectionError:
             await self._aibox_chi_gui(request)
             return {"type": "stereo_set_channel_result", "channel": channel, "success": True}
+
+    async def async_stereo_enable_receiver(self) -> dict[str, Any]:
+        """Enable stereo receiver/slave mode."""
+        return await self._aibox_request_action(
+            "stereo_enable_receiver",
+            expect_type={"stereo_state", "stereo_receiver_enable_result", "stereo_enable_receiver_result"},
+            fallback={"type": "stereo_receiver_enable_result", "receiver_enabled": True, "success": True},
+        )
+
+    async def async_stereo_disable_receiver(self) -> dict[str, Any]:
+        """Disable stereo receiver/slave mode."""
+        return await self._aibox_request_action(
+            "stereo_disable_receiver",
+            expect_type={"stereo_state", "stereo_receiver_disable_result", "stereo_disable_receiver_result"},
+            fallback={"type": "stereo_receiver_disable_result", "receiver_enabled": False, "success": True},
+        )
+
+    async def async_stereo_set_sync_delay(self, sync_delay_ms: int) -> dict[str, Any]:
+        """Set stereo synchronization delay in milliseconds."""
+        return await self._aibox_request_action(
+            "stereo_set_sync_delay",
+            payload={"sync_delay_ms": int(sync_delay_ms)},
+            expect_type={"stereo_state", "stereo_set_sync_delay_result"},
+            fallback={"type": "stereo_set_sync_delay_result", "sync_delay_ms": int(sync_delay_ms), "success": True},
+        )
+
+    async def _aibox_request_action(
+        self,
+        action: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        expect_type: str | set[str] | None = None,
+        timeout: float = 8.0,
+        fallback: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Send an AiboxPlus action and return a normalized response."""
+        request: dict[str, Any] = {"action": action}
+        if payload:
+            request.update({key: value for key, value in payload.items() if value is not None})
+        try:
+            return await self._aibox_gui_va_cho(
+                request,
+                expect_type=expect_type,
+                timeout=timeout,
+            )
+        except Esp32AiboxApiConnectionError:
+            with suppress(Esp32AiboxApiConnectionError):
+                await self._aibox_chi_gui(request)
+            return dict(fallback or {"type": f"{action}_result", "success": False})
+
+    async def async_alarm_list(self) -> dict[str, Any]:
+        """Get configured alarms from AiboxPlus."""
+        return await self._aibox_request_action(
+            "alarm_list",
+            expect_type={"alarm_list"},
+            timeout=8.0,
+            fallback={"type": "alarm_list", "success": False, "alarms": []},
+        )
+
+    async def async_alarm_stop(self) -> dict[str, Any]:
+        """Stop the active alarm."""
+        return await self._aibox_request_action(
+            "alarm_stop",
+            expect_type={"alarm_stopped"},
+            timeout=5.0,
+            fallback={"type": "alarm_stopped", "success": True, "active": False, "unverified": True},
+        )
+
+    async def async_alarm_add(
+        self,
+        *,
+        hour: int,
+        minute: int,
+        repeat: str = "none",
+        label: str = "",
+        volume: int = 100,
+        custom_sound_path: str | None = None,
+        youtube_song_name: str | None = None,
+        selected_days: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Add a new alarm on AiboxPlus."""
+        payload: dict[str, Any] = {
+            "hour": int(hour),
+            "minute": int(minute),
+            "repeat": str(repeat or "none"),
+            "label": str(label or ""),
+            "volume": int(volume),
+        }
+        if custom_sound_path is not None:
+            payload["custom_sound_path"] = str(custom_sound_path)
+        if youtube_song_name is not None:
+            payload["youtube_song_name"] = str(youtube_song_name)
+        if selected_days is not None:
+            payload["selected_days"] = list(selected_days)
+        return await self._aibox_request_action(
+            "alarm_add",
+            payload=payload,
+            expect_type={"alarm_added", "alarm_add_result"},
+            timeout=10.0,
+            fallback={"type": "alarm_added", "success": True, "unverified": True, **payload},
+        )
+
+    async def async_alarm_edit(
+        self,
+        *,
+        alarm_id: str,
+        hour: int,
+        minute: int,
+        repeat: str = "none",
+        label: str = "",
+        volume: int = 100,
+        custom_sound_path: str | None = None,
+        youtube_song_name: str | None = None,
+        selected_days: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Edit an existing alarm on AiboxPlus."""
+        payload: dict[str, Any] = {
+            "alarm_id": str(alarm_id),
+            "hour": int(hour),
+            "minute": int(minute),
+            "repeat": str(repeat or "none"),
+            "label": str(label or ""),
+            "volume": int(volume),
+        }
+        if custom_sound_path is not None:
+            payload["custom_sound_path"] = str(custom_sound_path)
+        if youtube_song_name is not None:
+            payload["youtube_song_name"] = str(youtube_song_name)
+        if selected_days is not None:
+            normalized_days = list(selected_days)
+            payload["selected_days"] = None if len(normalized_days) == 0 or normalized_days == ["__CLEAR__"] else normalized_days
+        return await self._aibox_request_action(
+            "alarm_edit",
+            payload=payload,
+            expect_type={"alarm_edited", "alarm_edit_result"},
+            timeout=10.0,
+            fallback={"type": "alarm_edited", "success": True, "unverified": True, **payload},
+        )
+
+    async def async_alarm_delete(self, alarm_id: str) -> dict[str, Any]:
+        """Delete one alarm from AiboxPlus."""
+        normalized_alarm_id = self._dam_bao_khong_rong(str(alarm_id), "alarm_id")
+        return await self._aibox_request_action(
+            "alarm_delete",
+            payload={"alarm_id": normalized_alarm_id},
+            expect_type={"alarm_deleted", "alarm_delete_result"},
+            timeout=8.0,
+            fallback={"type": "alarm_deleted", "success": True, "alarm_id": normalized_alarm_id, "unverified": True},
+        )
+
+    async def async_alarm_toggle(self, alarm_id: str) -> dict[str, Any]:
+        """Toggle one alarm from AiboxPlus."""
+        normalized_alarm_id = self._dam_bao_khong_rong(str(alarm_id), "alarm_id")
+        return await self._aibox_request_action(
+            "alarm_toggle",
+            payload={"alarm_id": normalized_alarm_id},
+            expect_type={"alarm_toggled", "alarm_toggle_result"},
+            timeout=8.0,
+            fallback={"type": "alarm_toggled", "success": True, "alarm_id": normalized_alarm_id, "unverified": True},
+        )
+
+    async def async_alarm_upload_sound(
+        self,
+        *,
+        file_name: str,
+        file_data: str,
+        alarm_id: int = -1,
+    ) -> dict[str, Any]:
+        """Upload a custom alarm sound to AiboxPlus."""
+        normalized_file_name = self._dam_bao_khong_rong(file_name, "file_name")
+        normalized_file_data = self._dam_bao_khong_rong(file_data, "file_data")
+        return await self._aibox_request_action(
+            "alarm_upload_sound",
+            payload={
+                "alarm_id": int(alarm_id),
+                "file_name": normalized_file_name,
+                "file_data": normalized_file_data,
+            },
+            expect_type={"alarm_sound_uploaded"},
+            timeout=30.0,
+            fallback={
+                "type": "alarm_sound_uploaded",
+                "success": True,
+                "file_path": normalized_file_name,
+                "unverified": True,
+            },
+        )
+
+    async def async_ota_get(self) -> dict[str, Any]:
+        """Get OTA configuration from AiboxPlus."""
+        return await self._aibox_request_action(
+            "ota_get",
+            expect_type={"ota_config", "ota_get_result"},
+            timeout=6.0,
+            fallback={"type": "ota_get_result", "success": False},
+        )
+
+    async def async_ota_set(self, ota_url: str) -> dict[str, Any]:
+        """Set OTA URL on AiboxPlus."""
+        return await self._aibox_request_action(
+            "ota_set",
+            payload={"ota_url": str(ota_url or "").strip()},
+            expect_type={"ota_set_result", "ota_config"},
+            timeout=6.0,
+            fallback={"type": "ota_set_result", "success": True, "ota_url": str(ota_url or "").strip(), "unverified": True},
+        )
+
+    async def async_mac_get(self) -> dict[str, Any]:
+        """Get MAC information from AiboxPlus."""
+        return await self._aibox_request_action(
+            "mac_get",
+            expect_type={"mac_get"},
+            timeout=6.0,
+            fallback={"type": "mac_get", "success": False},
+        )
+
+    async def async_mac_random(self) -> dict[str, Any]:
+        """Generate and store a random MAC on AiboxPlus."""
+        return await self._aibox_request_action(
+            "mac_random",
+            expect_type={"mac_random"},
+            timeout=8.0,
+            fallback={"type": "mac_random", "success": True, "unverified": True},
+        )
+
+    async def async_mac_clear(self) -> dict[str, Any]:
+        """Clear custom MAC and restore hardware MAC on AiboxPlus."""
+        return await self._aibox_request_action(
+            "mac_clear",
+            expect_type={"mac_clear"},
+            timeout=6.0,
+            fallback={"type": "mac_clear", "success": True, "unverified": True},
+        )
+
+    async def async_hass_get(self) -> dict[str, Any]:
+        """Get Home Assistant bridge configuration from AiboxPlus."""
+        return await self._aibox_request_action(
+            "hass_get",
+            expect_type={"hass_config", "hass_get_result"},
+            timeout=6.0,
+            fallback={"type": "hass_get_result", "success": False},
+        )
+
+    async def async_hass_set(self, *, url: str = "", api_key: str | None = None, agent_id: str = "") -> dict[str, Any]:
+        """Set Home Assistant bridge configuration on AiboxPlus."""
+        payload: dict[str, Any] = {"url": str(url or "").strip(), "agent_id": str(agent_id or "").strip()}
+        if api_key is not None:
+            payload["api_key"] = str(api_key)
+        return await self._aibox_request_action(
+            "hass_set",
+            payload=payload,
+            expect_type={"hass_set_result", "hass_config"},
+            timeout=8.0,
+            fallback={"type": "hass_set_result", "success": True, "configured": bool(payload.get("url") and (payload.get("api_key") or "")), "unverified": True, **payload},
+        )
+
+    async def async_weather_province_get(self) -> dict[str, Any]:
+        """Get stored weather province from AiboxPlus."""
+        return await self._aibox_request_action(
+            "weather_province_get",
+            expect_type={"weather_province_state", "weather_province_get_result"},
+            timeout=6.0,
+            fallback={"type": "weather_province_get_result", "success": False},
+        )
+
+    async def async_weather_province_set(self, *, name: str = "", lat: float = 0, lon: float = 0) -> dict[str, Any]:
+        """Store weather province on AiboxPlus."""
+        payload = {"name": str(name or "").strip(), "lat": float(lat), "lon": float(lon)}
+        return await self._aibox_request_action(
+            "weather_province_set",
+            payload=payload,
+            expect_type={"weather_province_set_result", "weather_province_state"},
+            timeout=8.0,
+            fallback={"type": "weather_province_set_result", "success": True, "unverified": True, **payload},
+        )
+
+    async def async_wifi_scan(self) -> dict[str, Any]:
+        """Scan nearby WiFi networks on AiboxPlus."""
+        payload = {"action": "wifi_scan"}
+        with suppress(Esp32AiboxApiConnectionError):
+            live_result = await self._aibox_wifi_live_action(
+                payload,
+                predicate=lambda cached, before: int(cached.get("updated_at_ms") or 0) > before and isinstance(cached.get("scanned_networks"), list),
+                timeout=14.0,
+            )
+            if live_result is not None:
+                return {
+                    "type": "wifi_scan_result",
+                    "success": True,
+                    "networks": list(live_result.get("scanned_networks") or []),
+                    "updated_at_ms": live_result.get("updated_at_ms"),
+                    "from_live_cache": True,
+                }
+        return await self._aibox_request_action(
+            "wifi_scan",
+            expect_type={"wifi_scan_result"},
+            timeout=14.0,
+            fallback={"type": "wifi_scan_result", "success": False, "networks": []},
+        )
+
+    async def async_wifi_connect(
+        self,
+        *,
+        ssid: str | None = None,
+        password: str | None = None,
+        security_type: str | None = None,
+        network_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Connect to WiFi on AiboxPlus."""
+        normalized_ssid = str(ssid or "").strip()
+        if not normalized_ssid and network_id is None:
+            raise Esp32AiboxApiResponseError("ssid or network_id is required")
+        payload: dict[str, Any] = {
+            "action": "wifi_connect",
+            "ssid": normalized_ssid,
+            "password": "" if password is None else str(password),
+            "security_type": str(security_type or "wpa"),
+        }
+        if network_id is not None:
+            payload["network_id"] = int(network_id)
+        with suppress(Esp32AiboxApiConnectionError):
+            live_result = await self._aibox_wifi_live_action(
+                payload,
+                predicate=lambda cached, before: int(cached.get("updated_at_ms") or 0) > before and str(cached.get("last_wifi_event_type") or "") in {"wifi_connect_result", "wifi_status", "wifi_ap_status"},
+                timeout=16.0,
+            )
+            if live_result is not None:
+                return dict(live_result)
+        return await self._aibox_request_action(
+            "wifi_connect",
+            payload={key: value for key, value in payload.items() if key != "action"},
+            expect_type={"wifi_connect_result", "wifi_status"},
+            timeout=16.0,
+            fallback={"type": "wifi_connect_result", "success": True, "ssid": normalized_ssid, "network_id": network_id, "unverified": True},
+        )
+
+    async def async_wifi_get_status(self) -> dict[str, Any]:
+        """Get WiFi status from AiboxPlus."""
+        cached = self._aibox_lay_cache('wifi_status', max_age=3.0)
+        if cached and any(key in cached for key in ('current_ssid', 'is_connected', 'ap_mode_active', 'ip_address')):
+            return cached
+        payload = {"action": "wifi_get_status"}
+        with suppress(Esp32AiboxApiConnectionError):
+            live_result = await self._aibox_wifi_live_action(
+                payload,
+                predicate=lambda cached, before: int(cached.get("updated_at_ms") or 0) > before and any(key in cached for key in ("current_ssid", "is_connected", "ap_mode_active", "ip_address")),
+                timeout=8.0,
+            )
+            if live_result is not None:
+                return dict(live_result)
+        return await self._aibox_request_action(
+            "wifi_get_status",
+            expect_type={"wifi_status", "wifi_ap_status"},
+            timeout=8.0,
+            fallback={"type": "wifi_status", "success": False},
+        )
+
+    async def async_wifi_get_saved(self) -> dict[str, Any]:
+        """Get saved WiFi networks from AiboxPlus."""
+        cached = self._aibox_lay_cache('wifi_status', max_age=6.0)
+        if cached and isinstance(cached.get('saved_networks'), list):
+            return {"type": "wifi_saved_result", "success": True, "networks": list(cached.get('saved_networks') or []), "updated_at_ms": cached.get('updated_at_ms'), "from_live_cache": True}
+        payload = {"action": "wifi_get_saved"}
+        with suppress(Esp32AiboxApiConnectionError):
+            live_result = await self._aibox_wifi_live_action(
+                payload,
+                predicate=lambda cached, before: int(cached.get("updated_at_ms") or 0) > before and isinstance(cached.get("saved_networks"), list),
+                timeout=10.0,
+            )
+            if live_result is not None:
+                return {"type": "wifi_saved_result", "success": True, "networks": list(live_result.get("saved_networks") or []), "updated_at_ms": live_result.get("updated_at_ms"), "from_live_cache": True}
+        return await self._aibox_request_action(
+            "wifi_get_saved",
+            expect_type={"wifi_saved_result"},
+            timeout=10.0,
+            fallback={"type": "wifi_saved_result", "success": False, "networks": []},
+        )
+
+    async def async_wifi_delete_saved(self, *, ssid: str | None = None, network_id: int | None = None) -> dict[str, Any]:
+        """Delete one saved WiFi network on AiboxPlus."""
+        payload: dict[str, Any] = {"action": "wifi_delete_saved"}
+        if ssid is not None:
+            payload["ssid"] = str(ssid)
+        if network_id is not None:
+            payload["network_id"] = int(network_id)
+        with suppress(Esp32AiboxApiConnectionError):
+            live_result = await self._aibox_wifi_live_action(
+                payload,
+                predicate=lambda cached, before: int(cached.get("updated_at_ms") or 0) > before and str(cached.get("last_wifi_event_type") or "") in {"wifi_delete_result", "wifi_saved_result"},
+                timeout=10.0,
+            )
+            if live_result is not None:
+                return dict(live_result)
+        return await self._aibox_request_action(
+            "wifi_delete_saved",
+            payload={key: value for key, value in payload.items() if key != "action"},
+            expect_type={"wifi_delete_result", "wifi_saved_result"},
+            timeout=10.0,
+            fallback={"type": "wifi_delete_result", "success": True, "ssid": payload.get("ssid"), "network_id": payload.get("network_id"), "unverified": True},
+        )
+
+    async def async_wifi_start_ap(self) -> dict[str, Any]:
+        """Enable AP mode on AiboxPlus."""
+        payload = {"action": "wifi_start_ap"}
+        with suppress(Esp32AiboxApiConnectionError):
+            live_result = await self._aibox_wifi_live_action(
+                payload,
+                predicate=lambda cached, before: int(cached.get("updated_at_ms") or 0) > before and (
+                    str(cached.get("last_wifi_event_type") or "") in {"wifi_ap_result", "wifi_ap_status", "wifi_status"}
+                    or cached.get("ap_mode_active") is True
+                ),
+                timeout=12.0,
+            )
+            if live_result is not None:
+                return dict(live_result)
+        return await self._aibox_request_action(
+            "wifi_start_ap",
+            expect_type={"wifi_ap_result", "wifi_ap_status", "wifi_status"},
+            timeout=12.0,
+            fallback={"type": "wifi_ap_result", "success": True, "ap_mode_active": True, "unverified": True},
+        )
+
+    async def async_wifi_stop_ap(self) -> dict[str, Any]:
+        """Disable AP mode on AiboxPlus."""
+        payload = {"action": "wifi_stop_ap"}
+        with suppress(Esp32AiboxApiConnectionError):
+            live_result = await self._aibox_wifi_live_action(
+                payload,
+                predicate=lambda cached, before: int(cached.get("updated_at_ms") or 0) > before and (
+                    str(cached.get("last_wifi_event_type") or "") in {"wifi_ap_result", "wifi_ap_status", "wifi_status"}
+                    or cached.get("ap_mode_active") is False
+                ),
+                timeout=12.0,
+            )
+            if live_result is not None:
+                return dict(live_result)
+        return await self._aibox_request_action(
+            "wifi_stop_ap",
+            expect_type={"wifi_ap_result", "wifi_ap_status", "wifi_status"},
+            timeout=12.0,
+            fallback={"type": "wifi_ap_result", "success": True, "ap_mode_active": False, "unverified": True},
+        )
+
+
+    @staticmethod
+    def _system_monitor_mem_value(raw_text: str, key: str) -> int:
+        match = re.search(rf"^{re.escape(key)}:\s+(\d+)", raw_text, flags=re.MULTILINE)
+        return int(match.group(1)) if match else 0
+
+    @staticmethod
+    def _system_monitor_cpu_tuple(raw_text: str) -> tuple[int, int] | None:
+        match = re.search(r"^cpu\s+(.+)$", raw_text, flags=re.MULTILINE)
+        if not match:
+            return None
+        parts: list[int] = []
+        for item in match.group(1).strip().split():
+            with suppress(ValueError):
+                parts.append(int(float(item)))
+        if len(parts) < 4:
+            return None
+        total = sum(parts)
+        idle = parts[3]
+        return idle, total
+
+    async def async_get_system_monitor(self) -> dict[str, Any]:
+        """Collect RAM and CPU usage in the same style as the original web UI."""
+        raw_text = await self.async_do_cmd("cat /proc/meminfo&&cat /proc/stat")
+        mem_total = self._system_monitor_mem_value(raw_text, "MemTotal")
+        mem_free = self._system_monitor_mem_value(raw_text, "MemFree")
+        mem_buffers = self._system_monitor_mem_value(raw_text, "Buffers")
+        mem_cached = self._system_monitor_mem_value(raw_text, "Cached")
+        used_ram = max(0, mem_total - (mem_free + mem_buffers + mem_cached)) if mem_total > 0 else 0
+        ram_percent = round((used_ram / mem_total) * 100) if mem_total > 0 else 0
+
+        cpu_percent = 0
+        cpu_tuple = self._system_monitor_cpu_tuple(raw_text)
+        if cpu_tuple and self._system_monitor_last_cpu:
+            prev_idle, prev_total = self._system_monitor_last_cpu
+            idle, total = cpu_tuple
+            delta_idle = idle - prev_idle
+            delta_total = total - prev_total
+            if delta_total > 0:
+                cpu_percent = max(0, min(100, round(100 - (delta_idle / delta_total * 100))))
+
+        if cpu_tuple and cpu_percent == 0 and self._system_monitor_last_cpu is None:
+            await asyncio.sleep(0.35)
+            raw_text_retry = await self.async_do_cmd("cat /proc/meminfo&&cat /proc/stat")
+            retry_tuple = self._system_monitor_cpu_tuple(raw_text_retry)
+            if retry_tuple:
+                idle_1, total_1 = cpu_tuple
+                idle_2, total_2 = retry_tuple
+                delta_idle = idle_2 - idle_1
+                delta_total = total_2 - total_1
+                if delta_total > 0:
+                    cpu_percent = max(0, min(100, round(100 - (delta_idle / delta_total * 100))))
+                    raw_text = raw_text_retry
+                    cpu_tuple = retry_tuple
+
+        if cpu_tuple:
+            self._system_monitor_last_cpu = cpu_tuple
+
+        return {
+            "type": "system_monitor",
+            "success": True,
+            "connected": True,
+            "status": "online",
+            "ram_percent": ram_percent,
+            "cpu_percent": cpu_percent,
+            "mem_total_kb": mem_total,
+            "mem_used_kb": used_ram,
+            "raw_text": raw_text.strip(),
+            "updated_at_ms": int(time.time() * 1000),
+        }
+
+    async def async_set_led_state(self, enabled: bool) -> dict[str, Any]:
+        """Best-effort set LED state on devices that only expose toggle semantics."""
+        desired = bool(enabled)
+        current = await self.async_led_get_state()
+        current_enabled = self._aibox_phan_tich_bool(current.get("enabled"))
+        if current_enabled == desired:
+            current.setdefault("type", "led_set_state_result")
+            current.setdefault("success", True)
+            return current
+
+        response = await self.async_led_toggle()
+        updated = await self.async_led_get_state()
+        updated_enabled = self._aibox_phan_tich_bool(updated.get("enabled"))
+        if updated_enabled == desired:
+            updated.setdefault("type", "led_set_state_result")
+            updated.setdefault("success", True)
+            return updated
+
+        if updated_enabled is not None and updated_enabled != desired:
+            await self.async_led_toggle()
+            updated = await self.async_led_get_state()
+            updated_enabled = self._aibox_phan_tich_bool(updated.get("enabled"))
+            if updated_enabled == desired:
+                updated.setdefault("type", "led_set_state_result")
+                updated.setdefault("success", True)
+                return updated
+
+        return {
+            "type": "led_set_state_result",
+            "enabled": desired,
+            "success": True,
+            "unverified": True,
+        }
 
     async def async_reboot(self) -> None:
         """Reboot speaker."""
