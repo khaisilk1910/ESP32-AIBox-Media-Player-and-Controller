@@ -146,6 +146,29 @@ play_youtube:
           filter:
             integration: esp32_aibox_media_controller
             domain: media_player
+    title:
+      required: false
+      advanced: true
+      selector:
+        text:
+    artist:
+      required: false
+      advanced: true
+      selector:
+        text:
+    thumbnail_url:
+      required: false
+      advanced: true
+      selector:
+        text:
+    duration_seconds:
+      required: false
+      advanced: true
+      selector:
+        number:
+          min: 0
+          max: 86400
+          mode: box
 
 play_zing:
   name: Play Zing MP3 by song id
@@ -167,6 +190,29 @@ play_zing:
           filter:
             integration: esp32_aibox_media_controller
             domain: media_player
+    title:
+      required: false
+      advanced: true
+      selector:
+        text:
+    artist:
+      required: false
+      advanced: true
+      selector:
+        text:
+    thumbnail_url:
+      required: false
+      advanced: true
+      selector:
+        text:
+    duration_seconds:
+      required: false
+      advanced: true
+      selector:
+        number:
+          min: 0
+          max: 86400
+          mode: box
 
 wake_word_set_enabled:
   name: Wake word set enabled

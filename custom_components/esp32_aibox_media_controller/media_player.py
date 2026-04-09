@@ -137,6 +137,10 @@ ATTR_QUERY = "query"
 ATTR_VIDEO_ID = "video_id"
 ATTR_SONG_ID = "song_id"
 ATTR_SPEAKER_ENTITIES = "speaker_entities"
+ATTR_TITLE = "title"
+ATTR_ARTIST = "artist"
+ATTR_THUMBNAIL_URL = "thumbnail_url"
+ATTR_DURATION_SECONDS = "duration_seconds"
 ATTR_SENSITIVITY = "sensitivity"
 ATTR_TEXT = "text"
 ATTR_IMAGE = "image"
@@ -264,6 +268,10 @@ async def async_setup_entry(
         {
             vol.Required(ATTR_VIDEO_ID): cv.string,
             vol.Optional(ATTR_SPEAKER_ENTITIES): vol.All(cv.ensure_list, [cv.entity_id]),
+            vol.Optional(ATTR_TITLE): cv.string,
+            vol.Optional(ATTR_ARTIST): cv.string,
+            vol.Optional(ATTR_THUMBNAIL_URL): cv.string,
+            vol.Optional(ATTR_DURATION_SECONDS): vol.Coerce(int),
         },
         "async_play_youtube",
     )
@@ -272,6 +280,10 @@ async def async_setup_entry(
         {
             vol.Required(ATTR_SONG_ID): cv.string,
             vol.Optional(ATTR_SPEAKER_ENTITIES): vol.All(cv.ensure_list, [cv.entity_id]),
+            vol.Optional(ATTR_TITLE): cv.string,
+            vol.Optional(ATTR_ARTIST): cv.string,
+            vol.Optional(ATTR_THUMBNAIL_URL): cv.string,
+            vol.Optional(ATTR_DURATION_SECONDS): vol.Coerce(int),
         },
         "async_play_zing",
     )
@@ -847,6 +859,14 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
             attrs["last_music_search"] = self._last_search
         if self._last_play:
             attrs["last_music_play"] = self._last_play
+            if self._last_play.get(ATTR_TITLE) and not attrs.get("media_title"):
+                attrs["media_title"] = self._last_play[ATTR_TITLE]
+            if self._last_play.get(ATTR_ARTIST) and not attrs.get("media_artist"):
+                attrs["media_artist"] = self._last_play[ATTR_ARTIST]
+            if self._last_play.get(ATTR_THUMBNAIL_URL) and not attrs.get("entity_picture"):
+                attrs["entity_picture"] = self._last_play[ATTR_THUMBNAIL_URL]
+            if self._last_play.get(ATTR_DURATION_SECONDS) and not attrs.get("media_duration"):
+                attrs["media_duration"] = self._last_play[ATTR_DURATION_SECONDS]
 
         merged_wake = dict(self._wake_word) if self._wake_word else {}
         if status.wake_word:
@@ -870,8 +890,19 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
         attrs["chat_background"] = self._chat_background or ""
 
         aibox_playback = status.aibox_playback if status.aibox_playback else self._client.get_last_aibox_playback()
-        if aibox_playback:
-            attrs["aibox_playback"] = aibox_playback
+        merged_aibox_playback = dict(aibox_playback) if isinstance(aibox_playback, dict) else {}
+        if self._last_play:
+            merged_aibox_playback.setdefault("id", self._last_play.get("id"))
+            merged_aibox_playback.setdefault("track_id", self._last_play.get("track_id"))
+            merged_aibox_playback.setdefault("video_id", self._last_play.get(ATTR_VIDEO_ID))
+            merged_aibox_playback.setdefault("song_id", self._last_play.get(ATTR_SONG_ID))
+            merged_aibox_playback.setdefault("source", self._last_play.get("source"))
+            merged_aibox_playback.setdefault("title", self._last_play.get(ATTR_TITLE))
+            merged_aibox_playback.setdefault("artist", self._last_play.get(ATTR_ARTIST))
+            merged_aibox_playback.setdefault("thumbnail_url", self._last_play.get(ATTR_THUMBNAIL_URL))
+            merged_aibox_playback.setdefault("duration", self._last_play.get(ATTR_DURATION_SECONDS))
+        if merged_aibox_playback:
+            attrs["aibox_playback"] = merged_aibox_playback
 
         merged_led_state = {}
         if isinstance(status.led_state, dict):
@@ -1304,18 +1335,85 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
             normalized.append(candidate)
         return normalized
 
-    async def _async_play_youtube_local(self, video_id: str) -> None:
+    def _tao_du_lieu_track_phat(
+        self,
+        *,
+        source: str,
+        track_id: str,
+        id_field: str,
+        title: str | None = None,
+        artist: str | None = None,
+        thumbnail_url: str | None = None,
+        duration_seconds: int | None = None,
+    ) -> dict[str, Any]:
+        """Build a normalized last play payload used by the card and multiroom targets."""
+        payload: dict[str, Any] = {
+            "source": source,
+            "id": track_id,
+            id_field: track_id,
+            "track_id": track_id,
+            "updated_at_ms": int(time.time() * 1000),
+        }
+
+        title_value = str(title or "").strip()
+        artist_value = str(artist or "").strip()
+        thumbnail_value = str(thumbnail_url or "").strip()
+        duration_value = int(duration_seconds) if isinstance(duration_seconds, (int, float)) else 0
+
+        if title_value:
+            payload[ATTR_TITLE] = title_value
+        if artist_value:
+            payload[ATTR_ARTIST] = artist_value
+        if thumbnail_value:
+            payload[ATTR_THUMBNAIL_URL] = thumbnail_value
+        if duration_value > 0:
+            payload[ATTR_DURATION_SECONDS] = duration_value
+        return payload
+
+    async def _async_play_youtube_local(
+        self,
+        video_id: str,
+        title: str | None = None,
+        artist: str | None = None,
+        thumbnail_url: str | None = None,
+        duration_seconds: int | None = None,
+    ) -> None:
         """Play YouTube locally on the current entity."""
         await self._client.async_play_youtube(video_id)
-        self._last_play = {"source": "youtube", "id": video_id}
+        self._last_play = self._tao_du_lieu_track_phat(
+            source="youtube",
+            track_id=video_id,
+            id_field=ATTR_VIDEO_ID,
+            title=title,
+            artist=artist,
+            thumbnail_url=thumbnail_url,
+            duration_seconds=duration_seconds,
+        )
         self._last_play_pause_sent = "play"
+        self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
 
-    async def _async_play_zing_local(self, song_id: str) -> None:
+    async def _async_play_zing_local(
+        self,
+        song_id: str,
+        title: str | None = None,
+        artist: str | None = None,
+        thumbnail_url: str | None = None,
+        duration_seconds: int | None = None,
+    ) -> None:
         """Play Zing locally on the current entity."""
         await self._client.async_play_zing(song_id)
-        self._last_play = {"source": "zingmp3", "id": song_id}
+        self._last_play = self._tao_du_lieu_track_phat(
+            source="zingmp3",
+            track_id=song_id,
+            id_field=ATTR_SONG_ID,
+            title=title,
+            artist=artist,
+            thumbnail_url=thumbnail_url,
+            duration_seconds=duration_seconds,
+        )
         self._last_play_pause_sent = "play"
+        self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
 
     async def _async_goi_service_multiroom_target(
@@ -1394,41 +1492,91 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
         self,
         video_id: str,
         speaker_entities: list[str] | None = None,
+        title: str | None = None,
+        artist: str | None = None,
+        thumbnail_url: str | None = None,
+        duration_seconds: int | None = None,
     ) -> None:
         """Entity service: play YouTube song by video id, optionally on many speakers."""
         normalized_video_id = video_id.strip()
         targets = self._chuan_hoa_danh_sach_loa_multiroom(speaker_entities)
+        service_data: dict[str, Any] = {ATTR_VIDEO_ID: normalized_video_id}
+        if title:
+            service_data[ATTR_TITLE] = title
+        if artist:
+            service_data[ATTR_ARTIST] = artist
+        if thumbnail_url:
+            service_data[ATTR_THUMBNAIL_URL] = thumbnail_url
+        if isinstance(duration_seconds, (int, float)) and int(duration_seconds) > 0:
+            service_data[ATTR_DURATION_SECONDS] = int(duration_seconds)
 
         if targets and not (len(targets) == 1 and targets[0] == self.entity_id):
             await self._async_dispatch_multiroom_play(
                 service_name=SERVICE_PLAY_YOUTUBE,
-                service_data={ATTR_VIDEO_ID: normalized_video_id},
+                service_data=service_data,
                 speaker_entities=targets,
-                local_coro_factory=lambda: self._async_play_youtube_local(normalized_video_id),
+                local_coro_factory=lambda: self._async_play_youtube_local(
+                    normalized_video_id,
+                    title=title,
+                    artist=artist,
+                    thumbnail_url=thumbnail_url,
+                    duration_seconds=duration_seconds,
+                ),
             )
             return
 
-        await self._async_play_youtube_local(normalized_video_id)
+        await self._async_play_youtube_local(
+            normalized_video_id,
+            title=title,
+            artist=artist,
+            thumbnail_url=thumbnail_url,
+            duration_seconds=duration_seconds,
+        )
 
     async def async_play_zing(
         self,
         song_id: str,
         speaker_entities: list[str] | None = None,
+        title: str | None = None,
+        artist: str | None = None,
+        thumbnail_url: str | None = None,
+        duration_seconds: int | None = None,
     ) -> None:
         """Entity service: play Zing MP3 song by song id, optionally on many speakers."""
         normalized_song_id = song_id.strip()
         targets = self._chuan_hoa_danh_sach_loa_multiroom(speaker_entities)
+        service_data: dict[str, Any] = {ATTR_SONG_ID: normalized_song_id}
+        if title:
+            service_data[ATTR_TITLE] = title
+        if artist:
+            service_data[ATTR_ARTIST] = artist
+        if thumbnail_url:
+            service_data[ATTR_THUMBNAIL_URL] = thumbnail_url
+        if isinstance(duration_seconds, (int, float)) and int(duration_seconds) > 0:
+            service_data[ATTR_DURATION_SECONDS] = int(duration_seconds)
 
         if targets and not (len(targets) == 1 and targets[0] == self.entity_id):
             await self._async_dispatch_multiroom_play(
                 service_name=SERVICE_PLAY_ZING,
-                service_data={ATTR_SONG_ID: normalized_song_id},
+                service_data=service_data,
                 speaker_entities=targets,
-                local_coro_factory=lambda: self._async_play_zing_local(normalized_song_id),
+                local_coro_factory=lambda: self._async_play_zing_local(
+                    normalized_song_id,
+                    title=title,
+                    artist=artist,
+                    thumbnail_url=thumbnail_url,
+                    duration_seconds=duration_seconds,
+                ),
             )
             return
 
-        await self._async_play_zing_local(normalized_song_id)
+        await self._async_play_zing_local(
+            normalized_song_id,
+            title=title,
+            artist=artist,
+            thumbnail_url=thumbnail_url,
+            duration_seconds=duration_seconds,
+        )
 
     async def async_wake_word_set_enabled(self, enabled: bool) -> None:
         """Entity service: enable/disable wake word."""
@@ -2387,11 +2535,30 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
         pid = str(playlist_id)
         items = self._stored_items.get(pid, [])
         if items:
-            first_song = items[0]
+            first_song = dict(items[0]) if isinstance(items[0], dict) else {}
             source = str(first_song.get("source")).lower()
             song_id = first_song.get("id")
-            
+            title = str(first_song.get("title") or "").strip() or None
+            artist = str(first_song.get("artist") or first_song.get("channel") or first_song.get("singer") or "").strip() or None
+            thumbnail_url = str(first_song.get("thumbnail_url") or first_song.get("thumbnail") or first_song.get("thumb") or first_song.get("image") or "").strip() or None
+            raw_duration = first_song.get("duration_seconds", first_song.get("duration", first_song.get("time", 0)))
+            duration_seconds = int(raw_duration) if isinstance(raw_duration, (int, float)) else 0
+
             if source in ("zing", "zingmp3"):
-                await self.async_play_zing(song_id, speaker_entities=speaker_entities)
+                await self.async_play_zing(
+                    song_id,
+                    speaker_entities=speaker_entities,
+                    title=title,
+                    artist=artist,
+                    thumbnail_url=thumbnail_url,
+                    duration_seconds=duration_seconds,
+                )
             else:
-                await self.async_play_youtube(song_id, speaker_entities=speaker_entities)
+                await self.async_play_youtube(
+                    song_id,
+                    speaker_entities=speaker_entities,
+                    title=title,
+                    artist=artist,
+                    thumbnail_url=thumbnail_url,
+                    duration_seconds=duration_seconds,
+                )
