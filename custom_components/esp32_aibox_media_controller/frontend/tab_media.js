@@ -28,8 +28,8 @@ export const TabMediaMixin = {
     this._lastResultsScrollTop = 0; 
     this._isHoveringResults = false;   
     this._lastActiveItemId = null;     
-    this._forceScrollToActive = true;  // Cờ ép cuộn 1 lần khi load trang, đổi tab, hoặc search
-    this._isScrollingSmoothly = false; // Cờ khóa lưu vị trí khi đang tự động cuộn mượt
+    this._forceScrollToActive = true;
+    this._isScrollingSmoothly = false;
     this._smoothScrollTimeout = null;
 
     // --- State Playlist ---
@@ -52,7 +52,6 @@ export const TabMediaMixin = {
     this._currentPlaybackListIndex = -1;
   },
 
-  // Hàm Helper bóc tách JSON từ Home Assistant Attributes
   _parseJSONSafe(data) {
     if (!data) return {};
     if (typeof data === 'string') {
@@ -100,8 +99,16 @@ export const TabMediaMixin = {
     if (this._dangChoKetQuaTimKiem) {
       const cho = this._timKiemDangCho;
       const daCoKetQuaMoi = cho ? this._laKetQuaTimKiemMoi(this._thuocTinh().last_music_search || {}, cho.query, cho.source, cho.mocTruoc, cho.dauVetTruoc) : false;
-      if (daCoKetQuaMoi) { this._pendingRender = false; this._veGiaoDienGiuFocusTimKiem(); } 
-      else { this._pendingRender = true; }
+      if (daCoKetQuaMoi) { 
+          // FIX LỖI 1 LẦN CLICK: Phải tắt trạng thái đang chờ ngay khi có kết quả mới để _veGiaoDien() render đúng dữ liệu
+          this._dangChoKetQuaTimKiem = false; 
+          this._timKiemDangCho = null;
+          this._pendingRender = false; 
+          this._veGiaoDienGiuFocusTimKiem(); 
+      } 
+      else { 
+          this._pendingRender = true; 
+      }
       return true;
     }
     if (changed || mediaChanged) { 
@@ -136,7 +143,6 @@ export const TabMediaMixin = {
     let posRaw = Number.isFinite(Number(positionSeconds)) ? Math.max(0, Number(positionSeconds)) : 0;
     const dur = Number.isFinite(Number(durationSeconds)) ? Math.max(0, Number(durationSeconds)) : 0;
     
-    // Bỏ qua tọa độ rác từ HA nếu đang trong thời gian bảo vệ sau khi Play/Pause
     if (this._ignorePositionUntil && now < this._ignorePositionUntil) {
         posRaw = this._livePositionSeconds; 
     } else if (this._ignorePositionUntil && now >= this._ignorePositionUntil) {
@@ -158,9 +164,7 @@ export const TabMediaMixin = {
       this._liveTrackKey = trackKey; 
       this._livePositionSeconds = pos;
     } else {
-      // Ngăn chặn HA báo pos = 0 ngay khi vừa Pause bài hát làm tụt thanh chạy
       if (!this._livePlaying && pos === 0 && this._livePositionSeconds > 2) {
-          // Bỏ qua, giữ nguyên tiến trình cũ để hiển thị đúng vị trí Pause
       } else if (Math.abs(pos - this._livePositionSeconds) > 2) {
           this._livePositionSeconds = pos;
       }
@@ -230,10 +234,8 @@ export const TabMediaMixin = {
     return index;
   },
 
-  async _chuyenBaiTuList(huong) { // huong = 1 (next) hoặc -1 (prev)
+  async _chuyenBaiTuList(huong) {
     const playback = this._thongTinPhat();
-    const currentTrackId = playback.track_id;
-    
     let list = [];
     let listSource = "youtube";
 
@@ -429,7 +431,10 @@ export const TabMediaMixin = {
   },
 
   async _xuLyTimKiem(queryOverride = null) {
-    const query = String(queryOverride ?? this._query).trim();
+    const root = this.shadowRoot || this;
+    const input = root?.querySelector("#media-query");
+    // Lấy query trực tiếp từ input nếu có
+    const query = String(queryOverride ?? input?.value ?? this._query).trim();
     if (!query) return;
     this._query = query;
     const searchHienTai = this._thuocTinh().last_music_search || {};
@@ -439,25 +444,30 @@ export const TabMediaMixin = {
 
     this._dangChoKetQuaTimKiem = true;
     this._timKiemDangCho = { query, source, mocTruoc, dauVetTruoc };
-    let daCoKetQuaMoi = false;
+    
+    // Ép render trạng thái "Đang tìm kiếm..."
+    this._pendingRender = false;
+    this._veGiaoDienGiuFocusTimKiem();
+    
     try {
       await this._goiDichVu("media_player", this._timDichVuTheoTab(this._mediaSearchTab), { query });
-      daCoKetQuaMoi = await this._choKetQuaTimKiemMoi(query, source, mocTruoc, dauVetTruoc, 5000);
+      let daCoKetQuaMoi = await this._choKetQuaTimKiemMoi(query, source, mocTruoc, dauVetTruoc, 5000);
       if (!daCoKetQuaMoi) {
         try { await this._hass.callService("homeassistant", "update_entity", { entity_id: this._config.entity }); } catch (_) {}
-        daCoKetQuaMoi = await this._choKetQuaTimKiemMoi(query, source, mocTruoc, dauVetTruoc, 4000);
+        await this._choKetQuaTimKiemMoi(query, source, mocTruoc, dauVetTruoc, 4000);
       }
-      if (!daCoKetQuaMoi) daCoKetQuaMoi = this._ketQuaTimKiemKhopYeuCau(this._thuocTinh().last_music_search || {}, query, source);
     } finally {
+      // FIX CỐT LÕI LỖI DOUBLE CLICK: Phải tắt cờ trạng thái này NGAY LẬP TỨC để Render DOM lấy Data mới
       this._dangChoKetQuaTimKiem = false;
       this._timKiemDangCho = null;
-      const searchSauCung = this._thuocTinh().last_music_search || {};
-      if (daCoKetQuaMoi || (this._ketQuaTimKiemKhopYeuCau(searchSauCung, query, source) && this._laKetQuaTimKiemMoi(searchSauCung, query, source, mocTruoc, dauVetTruoc)) || this._ketQuaTimKiemKhopYeuCau(searchSauCung, query, source)) {
-        this._veGiaoDienGiuFocusTimKiem();
-      } else {
-        this._pendingRender = true;
-        this._giuFocusTimKiemKhongRender();
-      }
+      this._pendingRender = false;
+      this._veGiaoDienGiuFocusTimKiem();
+      
+      // Khởi chạy render lần 2 như phương án an toàn tuyệt đối thoát khỏi hàng đợi MicroTask
+      setTimeout(() => {
+          this._pendingRender = false;
+          this._veGiaoDienGiuFocusTimKiem();
+      }, 50);
     }
   },
 
@@ -493,7 +503,6 @@ export const TabMediaMixin = {
     const nextAction = playbackState.isPlaying ? "pause" : "play";
 
     this._lastPlayPauseSent = nextAction;
-    // Bật khiên bảo vệ vị trí khi Play/Pause để tránh HA gửi pos=0 tức thì làm nháy thanh chạy
     this._ignorePositionUntil = Date.now() + 3000; 
 
     if (nextAction === "pause") {
@@ -685,7 +694,6 @@ export const TabMediaMixin = {
     const sSource = String(source || 'youtube');
 
     if (!sId) {
-        console.error("Lỗi: Không tìm thấy ID bài hát hợp lệ để thêm vào playlist.");
         return;
     }
     
@@ -804,8 +812,10 @@ export const TabMediaMixin = {
                       }
                   }
 
+                  const safeSongData = encodeURIComponent(JSON.stringify(song));
+
                   return `
-                  <div class="result-item playable ${isPlayingItem ? "is-playing-item" : ""}" data-id="${this._maHoaHtml(sId)}" data-source="${this._maHoaHtml(sSource)}">
+                  <div class="result-item playable ${isPlayingItem ? "is-playing-item" : ""}" data-id="${this._maHoaHtml(sId)}" data-source="${this._maHoaHtml(sSource)}" data-song="${safeSongData}">
                       <div class="thumb-wrap">${sThumb ? `<img class="thumb" src="${this._maHoaHtml(sThumb)}" alt="" />` : `<div class="thumb fallback"><ha-icon icon="mdi:music-note"></ha-icon></div>`}</div>
                       <div class="result-meta">
                           <div class="result-title">${this._maHoaHtml(sTitle)}</div>
@@ -813,7 +823,7 @@ export const TabMediaMixin = {
                           <div class="result-duration">${this._dinhDangThoiLuong(sDuration)} <span class="source-badge">${sSource.toUpperCase()}</span></div>
                       </div>
                       <div class="result-actions">
-                          <button type="button" class="mini-btn mini-btn-danger play-btn" data-id="${this._maHoaHtml(sId)}" data-source="${this._maHoaHtml(sSource)}"><ha-icon icon="mdi:play"></ha-icon><span>Phát</span></button>
+                          <button type="button" class="mini-btn mini-btn-danger play-btn" data-id="${this._maHoaHtml(sId)}" data-source="${this._maHoaHtml(sSource)}" data-song="${safeSongData}"><ha-icon icon="mdi:play"></ha-icon><span>Phát</span></button>
                           <button type="button" class="mini-btn delete-song-btn" data-playlist-id="${this._dangXemPlaylistId}" data-index="${Number(sIndex)}"><ha-icon icon="mdi:trash-can"></ha-icon></button>
                       </div>
                   </div>`;
@@ -850,43 +860,47 @@ export const TabMediaMixin = {
             `;
         }
     } else {
-        resultsHtml = safeItems.length === 0 ? `<div class="empty">Chưa có kết quả tìm kiếm. Nhập từ khóa và bấm Tìm kiếm.</div>` : 
-          safeItems.map((item, idx) => {
-            const itemId = this._layIdMucMedia(item);
-            const itemTitle = item?.title || item?.name || `Bản nhạc ${idx + 1}`;
-            const itemArtist = item?.artist || item?.channel || item?.singer || "";
-            const itemDuration = parseInt(item?.duration_seconds || item?.duration || 0, 10);
-            const itemThumb = item?.thumbnail_url || item?.thumbnail || "";
+        if (this._dangChoKetQuaTimKiem) {
+            resultsHtml = `<div class="empty">Đang tìm kiếm...</div>`;
+        } else {
+            resultsHtml = safeItems.length === 0 ? `<div class="empty">Chưa có kết quả tìm kiếm. Nhập từ khóa và bấm Tìm kiếm.</div>` : 
+              safeItems.map((item, idx) => {
+                const itemId = this._layIdMucMedia(item);
+                const itemTitle = item?.title || item?.name || `Bản nhạc ${idx + 1}`;
+                const itemArtist = item?.artist || item?.channel || item?.singer || "";
+                const itemDuration = parseInt(item?.duration_seconds || item?.duration || 0, 10);
+                const itemThumb = item?.thumbnail_url || item?.thumbnail || "";
 
-            let isPlayingItem = false;
-            if (!hasHighlightedCurrent) {
-              if (String(playback.track_id).trim() && itemId && String(playback.track_id).trim() === itemId) { 
-                 isPlayingItem = true; hasHighlightedCurrent = true; 
-              } else if (String(playback.title).trim() && String(playback.title).trim().toLowerCase() !== "chưa có bài đang phát" && String(playback.title).trim().toLowerCase() === String(itemTitle).trim().toLowerCase()) { 
-                 isPlayingItem = true; hasHighlightedCurrent = true; 
-              }
-            }
-            
-            const safeSongData = encodeURIComponent(JSON.stringify({
-                id: itemId, video_id: itemId, song_id: itemId, 
-                title: itemTitle, artist: itemArtist, 
-                thumbnail_url: itemThumb, duration_seconds: itemDuration
-            }));
+                let isPlayingItem = false;
+                if (!hasHighlightedCurrent) {
+                  if (String(playback.track_id).trim() && itemId && String(playback.track_id).trim() === itemId) { 
+                     isPlayingItem = true; hasHighlightedCurrent = true; 
+                  } else if (String(playback.title).trim() && String(playback.title).trim().toLowerCase() !== "chưa có bài đang phát" && String(playback.title).trim().toLowerCase() === String(itemTitle).trim().toLowerCase()) { 
+                     isPlayingItem = true; hasHighlightedCurrent = true; 
+                  }
+                }
+                
+                const safeSongData = encodeURIComponent(JSON.stringify({
+                    id: itemId, video_id: itemId, song_id: itemId, 
+                    title: itemTitle, artist: itemArtist, 
+                    thumbnail_url: itemThumb, duration_seconds: itemDuration
+                }));
 
-            return `
-            <div class="result-item ${itemId ? "playable" : ""} ${isPlayingItem ? "is-playing-item" : ""}" data-id="${this._maHoaHtml(itemId)}" data-source="${this._maHoaHtml(listSource)}">
-              <div class="thumb-wrap">${itemThumb ? `<img class="thumb" src="${this._maHoaHtml(itemThumb)}" alt="" />` : `<div class="thumb fallback"><ha-icon icon="mdi:music-note"></ha-icon></div>`}</div>
-              <div class="result-meta">
-                <div class="result-title">${this._maHoaHtml(itemTitle)}</div>
-                <div class="result-artist">${this._maHoaHtml(itemArtist || "Chưa rõ nghệ sĩ")}</div>
-                <div class="result-duration">${this._dinhDangThoiLuong(itemDuration)}</div>
-              </div>
-              <div class="result-actions">
-                <button type="button" class="mini-btn mini-btn-accent add-pl-btn" data-song="${safeSongData}" data-source="${this._maHoaHtml(listSource)}" title="Thêm vào Playlist"><ha-icon icon="mdi:plus"></ha-icon></button>
-                <button type="button" class="mini-btn mini-btn-danger play-btn" data-id="${this._maHoaHtml(itemId)}" data-source="${this._maHoaHtml(listSource)}"><ha-icon icon="mdi:play"></ha-icon><span>Phát</span></button>
-              </div>
-            </div>`;
-        }).join("");
+                return `
+                <div class="result-item ${itemId ? "playable" : ""} ${isPlayingItem ? "is-playing-item" : ""}" data-id="${this._maHoaHtml(itemId)}" data-source="${this._maHoaHtml(listSource)}" data-song="${safeSongData}">
+                  <div class="thumb-wrap">${itemThumb ? `<img class="thumb" src="${this._maHoaHtml(itemThumb)}" alt="" />` : `<div class="thumb fallback"><ha-icon icon="mdi:music-note"></ha-icon></div>`}</div>
+                  <div class="result-meta">
+                    <div class="result-title">${this._maHoaHtml(itemTitle)}</div>
+                    <div class="result-artist">${this._maHoaHtml(itemArtist || "Chưa rõ nghệ sĩ")}</div>
+                    <div class="result-duration">${this._dinhDangThoiLuong(itemDuration)}</div>
+                  </div>
+                  <div class="result-actions">
+                    <button type="button" class="mini-btn mini-btn-accent add-pl-btn" data-song="${safeSongData}" data-source="${this._maHoaHtml(listSource)}" title="Thêm vào Playlist"><ha-icon icon="mdi:plus"></ha-icon></button>
+                    <button type="button" class="mini-btn mini-btn-danger play-btn" data-id="${this._maHoaHtml(itemId)}" data-source="${this._maHoaHtml(listSource)}" data-song="${safeSongData}"><ha-icon icon="mdi:play"></ha-icon><span>Phát</span></button>
+                  </div>
+                </div>`;
+            }).join("");
+        }
     }
 
     return `
@@ -907,7 +921,6 @@ export const TabMediaMixin = {
           .hero-actions { display: flex; gap: 4px; align-items: center; margin-top: 4px; }
           .player-stage-new { margin-top: 14px; display: flex; align-items: center; }
           
-          /* FIX: Đĩa than quay mượt tuyệt đối với GPU Hardware Acceleration */
           .cover-disc { width: 80px; height: 80px; flex: 0 0 80px; border-radius: 50%; overflow: hidden; border: 2px solid rgba(255,255,255, 0.3); box-shadow: 0 6px 20px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 30% 25%, rgba(255,255,255, 0.1), rgba(0,0,0, 0.6)); position: relative; z-index: 2; transform: translate3d(0,0,0); will-change: transform, box-shadow; }
           .cover-disc img { width: 100%; height: 100%; object-fit: cover; }
           .cover-disc ha-icon { color: #fff; --mdc-icon-size: 28px; }
@@ -924,7 +937,6 @@ export const TabMediaMixin = {
           .btn-large ha-icon { --mdc-icon-size: 46px; }
           .icon-btn-transparent ha-icon { --mdc-icon-size: 28px; }
           
-          /* FIX: Sóng âm mượt mà bằng CSS Flex và ép GPU */
           .waveform-full { width: 100%; height: 75px; display: flex; align-items: flex-end; justify-content: space-between; overflow: visible !important; padding: 0; margin-top: -15px; box-sizing: border-box; }
           .wave-bar { flex: 1; margin: 0 1px; height: var(--h); border-radius: 4px; background: var(--accent); transform-origin: bottom; opacity: 0.6; box-shadow: 0 0 6px var(--accent); transform: translate3d(0,0,0); will-change: transform; }
           
@@ -1349,6 +1361,10 @@ export const TabMediaMixin = {
         if (ev.isComposing || this._mediaDangCompose) { this._mediaTimKiemSauCompose = true; return; }
         this._lastResultsScrollTop = 0; 
         this._forceScrollToActive = true;
+        
+        // Hủy cờ loading để ép cho phép tìm kiếm lại nếu bị kẹt
+        if (this._dangChoKetQuaTimKiem) this._dangChoKetQuaTimKiem = false;
+        
         this._query = mediaQuery.value; await this._xuLyTimKiem(mediaQuery.value);
       });
       mediaQuery.addEventListener("blur", () => { this._mediaQueryFocused = false; setTimeout(() => this._xuLyRenderCho?.(), 0); });
@@ -1362,6 +1378,10 @@ export const TabMediaMixin = {
           removeFocus();
           this._lastResultsScrollTop = 0; 
           this._forceScrollToActive = true;
+          
+          // Hủy cờ loading để ép cho phép tìm kiếm lại nếu bị kẹt (Fix bug block click)
+          if (this._dangChoKetQuaTimKiem) this._dangChoKetQuaTimKiem = false;
+          
           await this._xuLyTimKiem(mediaQuery ? mediaQuery.value : this._query);
       });
     }
@@ -1419,9 +1439,6 @@ export const TabMediaMixin = {
       } catch(e){}
     });
 
-    // ==========================================
-    // FIX: Xử lý sự kiện tăng/giảm Volume mượt mà không độ trễ
-    // ==========================================
     const thayDoiAmLuong = async (step) => {
         removeFocus();
         this._lastVolumeChangeAt = Date.now();
@@ -1432,7 +1449,6 @@ export const TabMediaMixin = {
         
         if (this._volumeLevel > 0) this._preMuteVolumeLevel = null;
         
-        // Optimistic UI - Cập nhật giao diện ngay lập tức
         const volumeSlider = root.querySelector("#media-volume");
         if (volumeSlider) volumeSlider.value = newVol;
         
@@ -1471,7 +1487,6 @@ export const TabMediaMixin = {
         this._volumeLevel = Number(ev.target.value) / 100; 
         if (this._volumeLevel > 0) this._preMuteVolumeLevel = null; 
         
-        // Optimistic UI khi kéo thả slider
         const val = ev.target.value;
         const text = root.querySelector(".modern-volume-text");
         if(text) text.innerText = `${val}%`;
@@ -1497,9 +1512,32 @@ export const TabMediaMixin = {
       });
     }
 
+    // FIX LỖI COVER/THÔNG TIN: Trích xuất trực tiếp bài hát từ mảng items được lưu trên RAM, thay vì phụ thuộc hoàn toàn vào data-song
     const playFromDataset = async (dataset) => { 
         removeFocus();
-        if (dataset?.id) await this._xuLyPhatMuc({ id: dataset.id }, dataset.source || ""); 
+        const targetId = dataset?.id;
+        if (!targetId) return;
+
+        let songObj = { id: targetId };
+        
+        // 1. Tìm cực kỳ chính xác trong mảng items đang vẽ trên màn hình
+        const thongTin = this._thongTinPhat();
+        let foundItem = null;
+        if (thongTin && Array.isArray(thongTin.items)) {
+            foundItem = thongTin.items.find(it => this._layIdMucMedia(it) === targetId);
+        }
+        if (!foundItem && this._mediaSearchTab === "playlists" && this._dangXemPlaylistId) {
+            foundItem = this._danhSachBaiHatTrongPlaylist.find(it => this._layIdMucMedia(it) === targetId);
+        }
+        
+        // 2. Chốt dữ liệu bài hát
+        if (foundItem) {
+            songObj = foundItem;
+        } else if (dataset.song) {
+            try { songObj = JSON.parse(decodeURIComponent(dataset.song)); } catch(e) {}
+        }
+        
+        await this._xuLyPhatMuc(songObj, dataset.source || ""); 
     };
 
     root.querySelectorAll(".play-btn").forEach(el => el.addEventListener("click", async (ev) => { ev.preventDefault(); ev.stopPropagation(); await playFromDataset(el.dataset); }));
