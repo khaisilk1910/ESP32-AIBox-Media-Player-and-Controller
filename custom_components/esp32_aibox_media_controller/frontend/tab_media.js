@@ -51,6 +51,7 @@ export const TabMediaMixin = {
     this._modalXoaPlaylist = { show: false, id: null };
     this._currentPlaybackListSignature = "";
     this._currentPlaybackListIndex = -1;
+    this._multiroomSelectedEntities = [];
   },
 
   _parseJSONSafe(data) {
@@ -60,6 +61,73 @@ export const TabMediaMixin = {
     }
     if (typeof data === 'object') return data;
     return {};
+  },
+
+
+  _layDanhSachLoaMultiroom() {
+    const entityIds = this._timCacEntityAibox ? this._timCacEntityAibox() : [];
+    return entityIds.map((entityId) => {
+      const stateObj = this._hass?.states?.[entityId] || {};
+      const attrs = stateObj.attributes || {};
+      return {
+        entity_id: entityId,
+        name: attrs.friendly_name || entityId,
+        state: stateObj.state || "unknown",
+      };
+    });
+  },
+
+  _layEntityLoaMultiroomDaChon() {
+    const available = this._layDanhSachLoaMultiroom();
+    const availableIds = new Set(available.map((item) => item.entity_id));
+    const raw = Array.isArray(this._multiroomSelectedEntities) ? this._multiroomSelectedEntities : [];
+    const normalized = [];
+    const seen = new Set();
+
+    raw.forEach((entityId) => {
+      const candidate = String(entityId || "").trim();
+      if (!candidate || !availableIds.has(candidate) || seen.has(candidate)) return;
+      seen.add(candidate);
+      normalized.push(candidate);
+    });
+
+    if (normalized.length > 0) return normalized;
+
+    const fallback = String(this._config?.entity || "").trim();
+    return fallback && availableIds.has(fallback) ? [fallback] : [];
+  },
+
+  _datEntityLoaMultiroomDaChon(entityIds = []) {
+    const availableIds = new Set(this._layDanhSachLoaMultiroom().map((item) => item.entity_id));
+    const next = [];
+    const seen = new Set();
+
+    (Array.isArray(entityIds) ? entityIds : []).forEach((entityId) => {
+      const candidate = String(entityId || "").trim();
+      if (!candidate || !availableIds.has(candidate) || seen.has(candidate)) return;
+      seen.add(candidate);
+      next.push(candidate);
+    });
+
+    if (next.length === 0) {
+      const fallback = String(this._config?.entity || "").trim();
+      if (fallback && availableIds.has(fallback)) next.push(fallback);
+    }
+
+    this._multiroomSelectedEntities = next;
+    return next;
+  },
+
+  _toggleEntityLoaMultiroom(entityId, checked) {
+    const current = this._layEntityLoaMultiroomDaChon();
+    const target = String(entityId || "").trim();
+    const next = checked ? [...current, target] : current.filter((item) => item !== target);
+    return this._datEntityLoaMultiroomDaChon(next);
+  },
+
+  _taoPayloadPhatMultiroom(extra = {}) {
+    const selected = this._layEntityLoaMultiroomDaChon();
+    return selected.length > 0 ? { ...extra, speaker_entities: selected } : { ...extra };
   },
 
   _kiemTraThayDoiTrangThaiMedia(entityRef) {
@@ -285,8 +353,8 @@ export const TabMediaMixin = {
       const trackId = this._thongTinPhat()?.track_id;
       const source = this._thongTinPhat()?.source || "";
       if (trackId) {
-        if (source.toLowerCase().includes("zing")) await this._goiDichVu("media_player", "play_zing", { song_id: trackId });
-        else await this._goiDichVu("media_player", "play_youtube", { video_id: trackId });
+        if (source.toLowerCase().includes("zing")) await this._goiDichVu("media_player", "play_zing", this._taoPayloadPhatMultiroom({ song_id: trackId }));
+        else await this._goiDichVu("media_player", "play_youtube", this._taoPayloadPhatMultiroom({ video_id: trackId }));
       } else {
         await this._goiDichVu("media_player", "media_play");
       }
@@ -554,8 +622,8 @@ export const TabMediaMixin = {
     this._liveTickAt = Date.now();
     this._veGiaoDien(); 
 
-    if (normalizedSource.includes("zing")) await this._goiDichVu("media_player", "play_zing", { song_id: resolvedId });
-    else await this._goiDichVu("media_player", "play_youtube", { video_id: resolvedId });
+    if (normalizedSource.includes("zing")) await this._goiDichVu("media_player", "play_zing", this._taoPayloadPhatMultiroom({ song_id: resolvedId }));
+    else await this._goiDichVu("media_player", "play_youtube", this._taoPayloadPhatMultiroom({ video_id: resolvedId }));
     await this._lamMoiEntity(300, 2);
   },
 
@@ -721,7 +789,7 @@ export const TabMediaMixin = {
 
   async _phatPlaylist(playlistId) {
     try {
-      await this._goiDichVu("media_player", "playlist_play", { playlist_id: String(playlistId) });
+      await this._goiDichVu("media_player", "playlist_play", this._taoPayloadPhatMultiroom({ playlist_id: String(playlistId) }));
       await this._lamMoiEntity(300);
     } catch (e) {
       console.error("Lỗi _phatPlaylist", e);
@@ -839,6 +907,42 @@ export const TabMediaMixin = {
     const safePlaylists = Array.isArray(this._danhSachPlaylist) ? this._danhSachPlaylist : [];
     const safePlaylistSongs = Array.isArray(this._danhSachBaiHatTrongPlaylist) ? this._danhSachBaiHatTrongPlaylist : [];
     const safeItems = Array.isArray(playback.items) ? playback.items : [];
+    const multiroomSpeakers = this._layDanhSachLoaMultiroom();
+    const multiroomSelected = this._layEntityLoaMultiroomDaChon();
+    const multiroomSelectedSet = new Set(multiroomSelected);
+    const multiroomHtml = multiroomSpeakers.length <= 1 ? '' : `
+        <div class="multiroom-panel">
+          <div class="multiroom-head">
+            <div>
+              <div class="multiroom-title">Multiroom</div>
+              <div class="multiroom-subtitle">Chọn loa sẽ phát nhạc cùng lúc (${multiroomSelected.length}/${multiroomSpeakers.length})</div>
+            </div>
+            <div class="multiroom-toolbar">
+              <button type="button" id="btn-multiroom-current" class="mini-btn">Loa hiện tại</button>
+              <button type="button" id="btn-multiroom-all" class="mini-btn mini-btn-accent">Tất cả</button>
+            </div>
+          </div>
+          <div class="multiroom-list">
+            ${multiroomSpeakers.map((speaker) => {
+              const entityId = String(speaker.entity_id || '');
+              const checked = multiroomSelectedSet.has(entityId);
+              const isCurrent = entityId === this._config?.entity;
+              return `
+                <label class="multiroom-chip ${checked ? 'selected' : ''}">
+                  <input
+                    type="checkbox"
+                    class="multiroom-checkbox"
+                    data-entity-id="${this._maHoaHtml(entityId)}"
+                    ${checked ? 'checked' : ''}
+                  />
+                  <span class="multiroom-chip-label">${this._maHoaHtml(speaker.name || entityId)}</span>
+                  ${isCurrent ? `<span class="multiroom-badge">Hiện tại</span>` : ''}
+                </label>
+              `;
+            }).join('')}
+          </div>
+        </div>
+    `;
 
     let resultsHtml = '';
     
@@ -1098,8 +1202,24 @@ export const TabMediaMixin = {
           .modal-btn-danger { background: #ef4444; color: #fff; }
           .modal-btn-danger:hover { filter: brightness(1.1); }
           .modal-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+          .multiroom-panel { display: grid; gap: 12px; margin: 10px 12px 12px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,0.04); }
+          .multiroom-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+          .multiroom-title { font-size: 14px; font-weight: 700; color: var(--text); }
+          .multiroom-subtitle { font-size: 12px; color: var(--muted); margin-top: 2px; }
+          .multiroom-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+          .multiroom-list { display: flex; flex-wrap: wrap; gap: 8px; }
+          .multiroom-chip { position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); color: var(--text); cursor: pointer; transition: all 0.18s ease; }
+          .multiroom-chip.selected { border-color: var(--accent); background: rgba(129,140,248,0.14); box-shadow: 0 0 0 1px rgba(129,140,248,0.2) inset; }
+          .multiroom-chip:hover { transform: translateY(-1px); }
+          .multiroom-checkbox { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
+          .multiroom-chip-label { font-size: 13px; font-weight: 600; line-height: 1.2; }
+          .multiroom-badge { font-size: 10px; padding: 2px 6px; border-radius: 999px; background: rgba(255,255,255,0.12); color: var(--text); }
 
           @media (max-width: 450px) {
+            .multiroom-head { flex-direction: column; align-items: stretch; }
+            .multiroom-toolbar { justify-content: stretch; }
+            .multiroom-toolbar .mini-btn { flex: 1; justify-content: center; }
+
             .cover-disc { width: 60px; height: 60px; flex: 0 0 60px; border-width: 1px; }
             .subtabs { grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 8px 8px 4px; }
             .search-row { padding: 6px 8px; gap: 8px; }
@@ -1184,6 +1304,8 @@ export const TabMediaMixin = {
           <input id="media-query" class="text-input" type="text" placeholder="${this._mediaSearchTab === 'playlist' ? 'Tìm playlist...' : 'Tìm bài hát...'}" value="${this._maHoaHtml(currentQuery)}" />
           <button type="button" id="btn-search" class="icon-btn icon-btn-primary search-btn-hover"><ha-icon icon="mdi:magnify"></ha-icon></button>
         </div>
+
+        ${multiroomHtml}
 
         <div class="results">
           ${resultsHtml}
@@ -1440,6 +1562,30 @@ export const TabMediaMixin = {
           });
       });
     }
+
+    root.querySelector("#btn-multiroom-all")?.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      removeFocus();
+      this._datEntityLoaMultiroomDaChon(this._layDanhSachLoaMultiroom().map((item) => item.entity_id));
+      this._veGiaoDien();
+    });
+
+    root.querySelector("#btn-multiroom-current")?.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      removeFocus();
+      this._datEntityLoaMultiroomDaChon([this._config?.entity]);
+      this._veGiaoDien();
+    });
+
+    root.querySelectorAll(".multiroom-checkbox").forEach((el) => {
+      el.addEventListener("change", (ev) => {
+        ev.stopPropagation();
+        this._toggleEntityLoaMultiroom(el.dataset.entityId, Boolean(ev.target?.checked));
+        this._veGiaoDien();
+      });
+    });
 
     const progressTrack = root.querySelector("#playback-progress-track");
     if (progressTrack) {
