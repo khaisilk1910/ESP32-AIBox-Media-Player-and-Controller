@@ -125,9 +125,38 @@ export const TabMediaMixin = {
     return this._datEntityLoaMultiroomDaChon(next);
   },
 
-  _taoPayloadPhatMultiroom(extra = {}) {
+  _taoMetadataPhat(item = {}) {
+    const track = item && typeof item === "object" ? item : {};
+    const metadata = {};
+    const title = this._chuoiKhongRongDauTien(track.title, track.name, track.song_name);
+    const artist = this._chuoiKhongRongDauTien(track.artist, track.channel, track.singer, track.author);
+    const thumbnailUrl = this._chuoiKhongRongDauTien(track.thumbnail_url, track.thumbnail, track.thumb, track.image);
+    const durationSeconds = this._epKieuGiayPhat(track.duration_seconds ?? track.duration ?? track.time ?? track.media_duration, 0);
+
+    if (title) metadata.title = title;
+    if (artist) metadata.artist = artist;
+    if (thumbnailUrl) metadata.thumbnail_url = thumbnailUrl;
+    if (durationSeconds > 0) metadata.duration_seconds = durationSeconds;
+    return metadata;
+  },
+
+  _taoPayloadPhatMultiroom(extra = {}, trackMeta = null) {
     const selected = this._layEntityLoaMultiroomDaChon();
-    return selected.length > 0 ? { ...extra, speaker_entities: selected } : { ...extra };
+    const payload = { ...(extra || {}) };
+    const metadata = trackMeta && typeof trackMeta === "object" ? trackMeta : {};
+    if (metadata.title) payload.title = metadata.title;
+    if (metadata.artist) payload.artist = metadata.artist;
+    if (metadata.thumbnail_url) payload.thumbnail_url = metadata.thumbnail_url;
+    if (Number(metadata.duration_seconds) > 0) payload.duration_seconds = Number(metadata.duration_seconds);
+    return selected.length > 0 ? { ...payload, speaker_entities: selected } : payload;
+  },
+
+  _moTaTrangThaiLoaMultiroom(stateValue, checked = false) {
+    const normalized = String(stateValue || "").trim().toLowerCase();
+    if (normalized === "playing") return checked ? "Đang chọn • đang phát" : "Đang phát";
+    if (["paused", "idle", "standby", "on"].includes(normalized)) return checked ? "Đang chọn • sẵn sàng" : "Sẵn sàng phát";
+    if (["unavailable", "unknown", "offline", "off"].includes(normalized)) return "Không khả dụng";
+    return checked ? "Đang chọn" : "Sẵn sàng phát";
   },
 
   _kiemTraThayDoiTrangThaiMedia(entityRef) {
@@ -353,8 +382,8 @@ export const TabMediaMixin = {
       const trackId = this._thongTinPhat()?.track_id;
       const source = this._thongTinPhat()?.source || "";
       if (trackId) {
-        if (source.toLowerCase().includes("zing")) await this._goiDichVu("media_player", "play_zing", this._taoPayloadPhatMultiroom({ song_id: trackId }));
-        else await this._goiDichVu("media_player", "play_youtube", this._taoPayloadPhatMultiroom({ video_id: trackId }));
+        if (source.toLowerCase().includes("zing")) await this._goiDichVu("media_player", "play_zing", this._taoPayloadPhatMultiroom({ song_id: trackId }, this._taoMetadataPhat(this._thongTinPhat())));
+        else await this._goiDichVu("media_player", "play_youtube", this._taoPayloadPhatMultiroom({ video_id: trackId }, this._taoMetadataPhat(this._thongTinPhat())));
       } else {
         await this._goiDichVu("media_player", "media_play");
       }
@@ -417,11 +446,11 @@ export const TabMediaMixin = {
     const rawTitle = this._chuoiKhongRongDauTien(aibox.title, attrs.media_title, byId?.title, play.title);
     let title = this._laTieuDeNghi(rawTitle) ? "" : rawTitle;
     let artist = this._chuoiKhongRongDauTien(aibox.artist, aibox.channel, attrs.media_artist, byId?.artist, byId?.channel, play.artist);
-    let duration = this._epKieuGiayPhat(aibox.duration ?? attrs.media_duration ?? byId?.duration_seconds, 0);
+    let duration = this._epKieuGiayPhat(aibox.duration ?? attrs.media_duration ?? play.duration_seconds ?? play.duration ?? byId?.duration_seconds, 0);
     let position = this._epKieuGiayPhat(aibox.position ?? attrs.media_position, 0);
     if (duration > 0 && position > duration) position = duration;
     let source = this._chuoiKhongRongDauTien(aibox.source, play.source, search.source);
-    let thumbnailUrl = this._chuoiKhongRongDauTien(aibox.thumbnail_url, attrs.entity_picture, byId?.thumbnail_url, items.find((item) => item?.thumbnail_url)?.thumbnail_url);
+    let thumbnailUrl = this._chuoiKhongRongDauTien(aibox.thumbnail_url, attrs.entity_picture, play.thumbnail_url, byId?.thumbnail_url, items.find((item) => item?.thumbnail_url)?.thumbnail_url);
 
     const aiboxPlaying = this._laPhatDangHoatDong(aibox.is_playing) || this._laPhatDangHoatDong(aibox.play_state) || this._laPhatDangHoatDong(aibox.state);
     const aiboxPaused = this._laPhatKhongHoatDong(aibox.is_playing) || this._laPhatKhongHoatDong(aibox.play_state) || this._laPhatKhongHoatDong(aibox.state);
@@ -622,8 +651,9 @@ export const TabMediaMixin = {
     this._liveTickAt = Date.now();
     this._veGiaoDien(); 
 
-    if (normalizedSource.includes("zing")) await this._goiDichVu("media_player", "play_zing", this._taoPayloadPhatMultiroom({ song_id: resolvedId }));
-    else await this._goiDichVu("media_player", "play_youtube", this._taoPayloadPhatMultiroom({ video_id: resolvedId }));
+    const trackMeta = this._taoMetadataPhat({ ...item, duration_seconds: itemDuration, thumbnail_url: item.thumbnail_url || item.thumbnail || item.thumb || item.image || "" });
+    if (normalizedSource.includes("zing")) await this._goiDichVu("media_player", "play_zing", this._taoPayloadPhatMultiroom({ song_id: resolvedId }, trackMeta));
+    else await this._goiDichVu("media_player", "play_youtube", this._taoPayloadPhatMultiroom({ video_id: resolvedId }, trackMeta));
     await this._lamMoiEntity(300, 2);
   },
 
@@ -911,37 +941,51 @@ export const TabMediaMixin = {
     const multiroomSelected = this._layEntityLoaMultiroomDaChon();
     const multiroomSelectedSet = new Set(multiroomSelected);
     const multiroomHtml = multiroomSpeakers.length <= 1 ? '' : `
-        <div class="multiroom-panel">
-          <div class="multiroom-head">
-            <div>
-              <div class="multiroom-title">Multiroom</div>
-              <div class="multiroom-subtitle">Chọn loa sẽ phát nhạc cùng lúc (${multiroomSelected.length}/${multiroomSpeakers.length})</div>
+        <section class="multiroom-panel">
+          <div class="multiroom-hero">
+            <div class="multiroom-hero-icon"><ha-icon icon="mdi:speaker-multiple"></ha-icon></div>
+            <div class="multiroom-hero-copy">
+              <div class="multiroom-eyebrow">Multiroom</div>
+              <div class="multiroom-title-row">
+                <div class="multiroom-title">Phát đồng thời nhiều loa</div>
+                <span class="multiroom-count">${multiroomSelected.length}/${multiroomSpeakers.length} loa</span>
+              </div>
+              <div class="multiroom-subtitle">Chọn loa nhận lệnh phát cùng lúc. Metadata bài hát sẽ được đẩy sang cả loa phụ.</div>
             </div>
             <div class="multiroom-toolbar">
               <button type="button" id="btn-multiroom-current" class="mini-btn">Loa hiện tại</button>
-              <button type="button" id="btn-multiroom-all" class="mini-btn mini-btn-accent">Tất cả</button>
+              <button type="button" id="btn-multiroom-all" class="mini-btn mini-btn-accent">Chọn tất cả</button>
             </div>
           </div>
-          <div class="multiroom-list">
+          <div class="multiroom-grid">
             ${multiroomSpeakers.map((speaker) => {
               const entityId = String(speaker.entity_id || '');
               const checked = multiroomSelectedSet.has(entityId);
               const isCurrent = entityId === this._config?.entity;
+              const stateText = this._moTaTrangThaiLoaMultiroom(speaker.state, checked);
               return `
-                <label class="multiroom-chip ${checked ? 'selected' : ''}">
+                <label class="multiroom-card ${checked ? 'selected' : ''} ${isCurrent ? 'current' : ''}">
                   <input
                     type="checkbox"
                     class="multiroom-checkbox"
                     data-entity-id="${this._maHoaHtml(entityId)}"
                     ${checked ? 'checked' : ''}
                   />
-                  <span class="multiroom-chip-label">${this._maHoaHtml(speaker.name || entityId)}</span>
-                  ${isCurrent ? `<span class="multiroom-badge">Hiện tại</span>` : ''}
+                  <span class="multiroom-checkmark"><ha-icon icon="mdi:check-bold"></ha-icon></span>
+                  <span class="multiroom-speaker-icon"><ha-icon icon="mdi:speaker-wireless"></ha-icon></span>
+                  <span class="multiroom-card-body">
+                    <span class="multiroom-chip-label">${this._maHoaHtml(speaker.name || entityId)}</span>
+                    <span class="multiroom-card-state">${this._maHoaHtml(stateText)}</span>
+                  </span>
+                  <span class="multiroom-tags">
+                    ${checked ? `<span class="multiroom-badge accent">Đã chọn</span>` : ''}
+                    ${isCurrent ? `<span class="multiroom-badge">Hiện tại</span>` : ''}
+                  </span>
                 </label>
               `;
             }).join('')}
           </div>
-        </div>
+        </section>
     `;
 
     let resultsHtml = '';
@@ -1202,23 +1246,40 @@ export const TabMediaMixin = {
           .modal-btn-danger { background: #ef4444; color: #fff; }
           .modal-btn-danger:hover { filter: brightness(1.1); }
           .modal-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-          .multiroom-panel { display: grid; gap: 12px; margin: 10px 12px 12px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,0.04); }
-          .multiroom-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-          .multiroom-title { font-size: 14px; font-weight: 700; color: var(--text); }
-          .multiroom-subtitle { font-size: 12px; color: var(--muted); margin-top: 2px; }
-          .multiroom-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-          .multiroom-list { display: flex; flex-wrap: wrap; gap: 8px; }
-          .multiroom-chip { position: relative; display: inline-flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); color: var(--text); cursor: pointer; transition: all 0.18s ease; }
-          .multiroom-chip.selected { border-color: var(--accent); background: rgba(129,140,248,0.14); box-shadow: 0 0 0 1px rgba(129,140,248,0.2) inset; }
-          .multiroom-chip:hover { transform: translateY(-1px); }
-          .multiroom-checkbox { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
-          .multiroom-chip-label { font-size: 13px; font-weight: 600; line-height: 1.2; }
-          .multiroom-badge { font-size: 10px; padding: 2px 6px; border-radius: 999px; background: rgba(255,255,255,0.12); color: var(--text); }
+          .multiroom-panel { display: grid; gap: 14px; margin: 10px 12px 12px; padding: 14px; border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.04)); box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 10px 28px rgba(0,0,0,0.14); }
+          .multiroom-hero { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+          .multiroom-hero-icon { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 14px; color: #fff; background: linear-gradient(135deg, rgba(129,140,248,0.95), rgba(168,85,247,0.95)); box-shadow: 0 10px 24px rgba(129,140,248,0.28); }
+          .multiroom-eyebrow { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.72); margin-bottom: 2px; }
+          .multiroom-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+          .multiroom-title { font-size: 15px; font-weight: 800; color: var(--text); }
+          .multiroom-count { font-size: 11px; font-weight: 700; color: #fff; padding: 5px 10px; border-radius: 999px; background: rgba(129,140,248,0.22); border: 1px solid rgba(129,140,248,0.34); }
+          .multiroom-subtitle { font-size: 12px; color: var(--muted); margin-top: 3px; max-width: 560px; }
+          .multiroom-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+          .multiroom-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
+          .multiroom-card { position: relative; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 14px 14px 14px 12px; border-radius: 18px; border: 1px solid rgba(255,255,255,0.08); background: rgba(13,18,32,0.46); color: var(--text); cursor: pointer; overflow: hidden; transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease; }
+          .multiroom-card::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at top right, rgba(129,140,248,0.18), transparent 42%); opacity: 0.9; pointer-events: none; }
+          .multiroom-card:hover { transform: translateY(-1px); border-color: rgba(129,140,248,0.26); box-shadow: 0 8px 24px rgba(0,0,0,0.16); }
+          .multiroom-card.selected { border-color: rgba(129,140,248,0.9); background: linear-gradient(180deg, rgba(129,140,248,0.16), rgba(129,140,248,0.08)); box-shadow: 0 0 0 1px rgba(129,140,248,0.18) inset, 0 12px 30px rgba(99,102,241,0.18); }
+          .multiroom-card.current { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04); }
+          .multiroom-checkbox { position: absolute; opacity: 0; pointer-events: none; }
+          .multiroom-checkmark { position: relative; z-index: 1; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 999px; border: 1px solid rgba(255,255,255,0.2); color: transparent; background: rgba(255,255,255,0.05); transition: all 0.18s ease; }
+          .multiroom-card.selected .multiroom-checkmark { color: #fff; border-color: rgba(129,140,248,0.95); background: linear-gradient(135deg, rgba(129,140,248,1), rgba(168,85,247,1)); box-shadow: 0 8px 18px rgba(129,140,248,0.28); }
+          .multiroom-speaker-icon { position: relative; z-index: 1; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 14px; color: rgba(255,255,255,0.92); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); }
+          .multiroom-card.selected .multiroom-speaker-icon { background: rgba(129,140,248,0.18); border-color: rgba(129,140,248,0.3); }
+          .multiroom-card-body { position: relative; z-index: 1; display: grid; min-width: 0; }
+          .multiroom-chip-label { font-size: 13px; font-weight: 700; line-height: 1.25; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .multiroom-card-state { margin-top: 3px; font-size: 11px; color: rgba(255,255,255,0.66); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .multiroom-tags { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+          .multiroom-badge { font-size: 10px; font-weight: 700; padding: 4px 8px; border-radius: 999px; background: rgba(255,255,255,0.1); color: var(--text); border: 1px solid rgba(255,255,255,0.06); white-space: nowrap; }
+          .multiroom-badge.accent { background: rgba(129,140,248,0.18); color: #fff; border-color: rgba(129,140,248,0.28); }
 
           @media (max-width: 450px) {
-            .multiroom-head { flex-direction: column; align-items: stretch; }
+            .multiroom-hero { grid-template-columns: 1fr; }
             .multiroom-toolbar { justify-content: stretch; }
             .multiroom-toolbar .mini-btn { flex: 1; justify-content: center; }
+            .multiroom-grid { grid-template-columns: 1fr; }
+            .multiroom-card { grid-template-columns: auto auto minmax(0, 1fr); }
+            .multiroom-tags { grid-column: 2 / span 2; flex-direction: row; justify-content: flex-start; align-items: center; flex-wrap: wrap; }
 
             .cover-disc { width: 60px; height: 60px; flex: 0 0 60px; border-width: 1px; }
             .subtabs { grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 8px 8px 4px; }
