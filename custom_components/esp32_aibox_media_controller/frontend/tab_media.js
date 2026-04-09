@@ -23,6 +23,7 @@ export const TabMediaMixin = {
     this._lastSearchStateKey = "";
     this._dangChoKetQuaTimKiem = false;
     this._timKiemDangCho = null;
+    this._activeSearchId = null; // Thêm biến theo dõi ID phiên tìm kiếm
     
     // --- State cuộn danh sách và Hover ---
     this._lastResultsScrollTop = 0; 
@@ -100,9 +101,10 @@ export const TabMediaMixin = {
       const cho = this._timKiemDangCho;
       const daCoKetQuaMoi = cho ? this._laKetQuaTimKiemMoi(this._thuocTinh().last_music_search || {}, cho.query, cho.source, cho.mocTruoc, cho.dauVetTruoc) : false;
       if (daCoKetQuaMoi) { 
-          // FIX LỖI 1 LẦN CLICK: Phải tắt trạng thái đang chờ ngay khi có kết quả mới để _veGiaoDien() render đúng dữ liệu
+          // Ngay khi Home Assistant push state mới về, tắt loading và render luôn
           this._dangChoKetQuaTimKiem = false; 
           this._timKiemDangCho = null;
+          this._activeSearchId = null;
           this._pendingRender = false; 
           this._veGiaoDienGiuFocusTimKiem(); 
       } 
@@ -397,22 +399,36 @@ export const TabMediaMixin = {
   _timDichVuTheoTab(tab) { return tab === "zing" ? "search_zing" : (tab === "playlist" || tab === "playlists" ? "search_playlist" : "search_youtube"); },
   _nguonKetQuaTheoTab(tab) { return tab === "zing" ? "zingmp3" : (tab === "playlist" || tab === "playlists" ? "youtube_playlist" : "youtube"); },
   _mocCapNhatTimKiem(search) { return Number.isFinite(Number(search?.updated_at_ms ?? search?.updatedAtMs ?? search?.updated_at ?? search?.updatedAt)) ? Number(search?.updated_at_ms ?? search?.updatedAtMs ?? search?.updated_at ?? search?.updatedAt) : 0; },
+  
   _dauVetKetQuaTimKiem(search) {
     if (!search || typeof search !== "object") return "";
     return JSON.stringify({ query: String(search.query || "").trim().toLowerCase(), source: String(search.source || "").trim().toLowerCase(), total: Number(search.total || 0), success: Boolean(search.success), items: (Array.isArray(search.items) ? search.items : []).slice(0, 5).map((item) => ({ id: String(item?.id ?? ""), title: String(item?.title ?? ""), artist: String(item?.artist ?? "") })) });
   },
+  
   _khoaTrangThaiTimKiem(search) { return search && typeof search === "object" ? `${this._mocCapNhatTimKiem(search)}|${this._dauVetKetQuaTimKiem(search)}` : ""; },
+  
   _ketQuaTimKiemKhopYeuCau(search, query, source) {
     if (!search || typeof search !== "object") return false;
-    const q = String(search.query || "").trim().toLowerCase(), s = String(search.source || "").trim().toLowerCase(), targetQ = String(query || "").trim().toLowerCase(), targetS = String(source || "").trim().toLowerCase();
+    const q = String(search.query || "").trim().toLowerCase();
+    const s = String(search.source || "").trim().toLowerCase();
+    const targetQ = String(query || "").trim().toLowerCase();
+    const targetS = String(source || "").trim().toLowerCase();
     return Boolean(targetQ) && q === targetQ && (!targetS || !s || s === targetS);
   },
+  
   _laKetQuaTimKiemMoi(search, query, source, mocTruoc, dauVetTruoc = "") {
+    // 1. Phải khớp từ khóa
     if (!this._ketQuaTimKiemKhopYeuCau(search, query, source)) return false;
+    
+    // 2. Kiểm tra timestamp cập nhật từ HA
     const mocHienTai = this._mocCapNhatTimKiem(search);
-    if (mocHienTai > 0 || mocTruoc > 0) return mocTruoc > 0 ? mocHienTai > mocTruoc : mocHienTai > 0;
+    if (mocHienTai > 0 && mocTruoc > 0 && mocHienTai > mocTruoc) {
+        return true; 
+    }
+    
+    // 3. Dự phòng trường hợp timestamp bị cache hoặc ko đổi nhưng data bị đổi
     const dauVetHienTai = this._dauVetKetQuaTimKiem(search);
-    return dauVetHienTai && (!dauVetTruoc || dauVetHienTai !== dauVetTruoc);
+    return Boolean(dauVetHienTai && dauVetHienTai !== dauVetTruoc);
   },
 
   async _choKetQuaTimKiemMoi(query, source, mocTruoc, dauVetTruoc = "", timeoutMs = 15000) {
@@ -430,20 +446,66 @@ export const TabMediaMixin = {
     return false;
   },
 
+  _layGiaTriTimKiemMedia(queryOverride = null) {
+    const root = this.shadowRoot || this;
+    const input = root?.querySelector("#media-query");
+    return String(queryOverride ?? input?.value ?? this._query ?? "").trim();
+  },
+
+  async _xuLyGuiTimKiemMedia({ queryOverride = null, deferWhenComposing = false, blurInput = false } = {}) {
+    const query = this._layGiaTriTimKiemMedia(queryOverride);
+    if (!query) return;
+
+    const source = this._nguonKetQuaTheoTab(this._mediaSearchTab);
+    const pendingQuery = String(this._timKiemDangCho?.query || "").trim().toLowerCase();
+    const pendingSource = String(this._timKiemDangCho?.source || "").trim().toLowerCase();
+    const normalizedQuery = query.toLowerCase();
+    const normalizedSource = String(source || "").trim().toLowerCase();
+
+    this._query = query;
+    this._lastResultsScrollTop = 0;
+    this._lastActiveItemId = null;
+    this._forceScrollToActive = true;
+
+    if (deferWhenComposing && this._mediaDangCompose) {
+      this._mediaTimKiemSauCompose = true;
+      if (blurInput) {
+        const activeEl = this.shadowRoot?.activeElement;
+        if (activeEl && typeof activeEl.blur === "function") activeEl.blur();
+      }
+      return;
+    }
+
+    if (blurInput) {
+      const activeEl = this.shadowRoot?.activeElement;
+      if (activeEl && typeof activeEl.blur === "function") activeEl.blur();
+    }
+
+    if (this._dangChoKetQuaTimKiem && pendingQuery === normalizedQuery && pendingSource === normalizedSource) {
+      return;
+    }
+
+    await this._xuLyTimKiem(query);
+  },
+
   async _xuLyTimKiem(queryOverride = null) {
     const root = this.shadowRoot || this;
     const input = root?.querySelector("#media-query");
-    // Lấy query trực tiếp từ input nếu có
     const query = String(queryOverride ?? input?.value ?? this._query).trim();
     if (!query) return;
+    
+    // Tạo ID duy nhất cho lượt tìm kiếm này (Chống race condition double-click)
+    const currentSearchId = Date.now();
+    this._activeSearchId = currentSearchId;
     this._query = query;
+
     const searchHienTai = this._thuocTinh().last_music_search || {};
     const source = this._nguonKetQuaTheoTab(this._mediaSearchTab);
     const mocTruoc = this._mocCapNhatTimKiem(searchHienTai);
     const dauVetTruoc = this._dauVetKetQuaTimKiem(searchHienTai);
 
     this._dangChoKetQuaTimKiem = true;
-    this._timKiemDangCho = { query, source, mocTruoc, dauVetTruoc };
+    this._timKiemDangCho = { query, source, mocTruoc, dauVetTruoc, id: currentSearchId };
     
     // Ép render trạng thái "Đang tìm kiếm..."
     this._pendingRender = false;
@@ -451,23 +513,22 @@ export const TabMediaMixin = {
     
     try {
       await this._goiDichVu("media_player", this._timDichVuTheoTab(this._mediaSearchTab), { query });
-      let daCoKetQuaMoi = await this._choKetQuaTimKiemMoi(query, source, mocTruoc, dauVetTruoc, 5000);
-      if (!daCoKetQuaMoi) {
+      
+      let daCoKetQuaMoi = await this._choKetQuaTimKiemMoi(query, source, mocTruoc, dauVetTruoc, 6000);
+      if (!daCoKetQuaMoi && this._activeSearchId === currentSearchId) {
         try { await this._hass.callService("homeassistant", "update_entity", { entity_id: this._config.entity }); } catch (_) {}
         await this._choKetQuaTimKiemMoi(query, source, mocTruoc, dauVetTruoc, 4000);
       }
+    } catch (err) {
+      console.error("Lỗi khi gọi dịch vụ tìm kiếm:", err);
     } finally {
-      // FIX CỐT LÕI LỖI DOUBLE CLICK: Phải tắt cờ trạng thái này NGAY LẬP TỨC để Render DOM lấy Data mới
-      this._dangChoKetQuaTimKiem = false;
-      this._timKiemDangCho = null;
-      this._pendingRender = false;
-      this._veGiaoDienGiuFocusTimKiem();
-      
-      // Khởi chạy render lần 2 như phương án an toàn tuyệt đối thoát khỏi hàng đợi MicroTask
-      setTimeout(() => {
+      // Chỉ hủy cờ loading nếu lượt tìm kiếm này vẫn là lượt mới nhất (chưa bị đè bởi lần Enter khác)
+      if (this._activeSearchId === currentSearchId) {
+          this._dangChoKetQuaTimKiem = false;
+          this._timKiemDangCho = null;
           this._pendingRender = false;
           this._veGiaoDienGiuFocusTimKiem();
-      }, 50);
+      }
     }
   },
 
@@ -1347,25 +1408,21 @@ export const TabMediaMixin = {
       mediaQuery.addEventListener("input", (ev) => { this._query = ev.target.value; });
       mediaQuery.addEventListener("compositionstart", () => { this._mediaDangCompose = true; });
       mediaQuery.addEventListener("compositionend", async (ev) => {
-        this._mediaDangCompose = false; this._query = ev.target.value;
-        if (this._mediaTimKiemSauCompose) { 
+        this._mediaDangCompose = false; 
+        const val = ev.target.value.trim();
+        if (this._mediaTimKiemSauCompose && val) { 
             this._mediaTimKiemSauCompose = false; 
-            this._lastResultsScrollTop = 0; 
-            this._forceScrollToActive = true;
-            await this._xuLyTimKiem(ev.target.value); 
+            await this._xuLyGuiTimKiemMedia({ queryOverride: val }); 
         }
       });
       mediaQuery.addEventListener("keydown", async (ev) => {
-        if (ev.key !== "Enter") return; ev.preventDefault(); ev.stopPropagation();
-        removeFocus();
-        if (ev.isComposing || this._mediaDangCompose) { this._mediaTimKiemSauCompose = true; return; }
-        this._lastResultsScrollTop = 0; 
-        this._forceScrollToActive = true;
-        
-        // Hủy cờ loading để ép cho phép tìm kiếm lại nếu bị kẹt
-        if (this._dangChoKetQuaTimKiem) this._dangChoKetQuaTimKiem = false;
-        
-        this._query = mediaQuery.value; await this._xuLyTimKiem(mediaQuery.value);
+        if (ev.key !== "Enter") return; 
+        ev.preventDefault(); 
+        ev.stopPropagation();
+        await this._xuLyGuiTimKiemMedia({
+          queryOverride: mediaQuery.value,
+          deferWhenComposing: Boolean(ev.isComposing || this._mediaDangCompose),
+        });
       });
       mediaQuery.addEventListener("blur", () => { this._mediaQueryFocused = false; setTimeout(() => this._xuLyRenderCho?.(), 0); });
     }
@@ -1374,15 +1431,13 @@ export const TabMediaMixin = {
     if (btnSearch) {
       btnSearch.addEventListener("mousedown", (ev) => ev.preventDefault());
       btnSearch.addEventListener("click", async (ev) => {
-          ev.preventDefault(); ev.stopPropagation();
-          removeFocus();
-          this._lastResultsScrollTop = 0; 
-          this._forceScrollToActive = true;
-          
-          // Hủy cờ loading để ép cho phép tìm kiếm lại nếu bị kẹt (Fix bug block click)
-          if (this._dangChoKetQuaTimKiem) this._dangChoKetQuaTimKiem = false;
-          
-          await this._xuLyTimKiem(mediaQuery ? mediaQuery.value : this._query);
+          ev.preventDefault(); 
+          ev.stopPropagation();
+          await this._xuLyGuiTimKiemMedia({
+            queryOverride: mediaQuery?.value,
+            deferWhenComposing: true,
+            blurInput: true,
+          });
       });
     }
 
@@ -1479,38 +1534,6 @@ export const TabMediaMixin = {
       this._veGiaoDien(); 
       try { await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel }); } catch(e){}
     });
-
-    const volumeSlider = root.querySelector("#media-volume");
-    if (volumeSlider) {
-      volumeSlider.addEventListener("input", (ev) => { 
-        this._lastVolumeChangeAt = Date.now();
-        this._volumeLevel = Number(ev.target.value) / 100; 
-        if (this._volumeLevel > 0) this._preMuteVolumeLevel = null; 
-        
-        const val = ev.target.value;
-        const text = root.querySelector(".modern-volume-text");
-        if(text) text.innerText = `${val}%`;
-        
-        const fill = root.querySelector(".modern-volume-fill");
-        if (fill) fill.style.width = `${val}%`;
-        
-        const muteIcon = root.querySelector("#btn-mute-toggle");
-        if (muteIcon) {
-            const numVal = Number(val);
-            muteIcon.className = numVal === 0 ? 'is-muted' : '';
-            muteIcon.setAttribute('icon', numVal === 0 ? "mdi:volume-mute" : (numVal < 40 ? "mdi:volume-low" : (numVal < 80 ? "mdi:volume-medium" : "mdi:volume-high")));
-        }
-      });
-      
-      volumeSlider.addEventListener("change", async (ev) => { 
-        removeFocus();
-        this._lastVolumeChangeAt = Date.now() + 500;
-        this._volumeLevel = Number(ev.target.value) / 100; 
-        if (this._volumeLevel > 0) this._preMuteVolumeLevel = null; 
-        
-        try { await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel }); } catch(e){}
-      });
-    }
 
     // FIX LỖI COVER/THÔNG TIN: Trích xuất trực tiếp bài hát từ mảng items được lưu trên RAM, thay vì phụ thuộc hoàn toàn vào data-song
     const playFromDataset = async (dataset) => { 
