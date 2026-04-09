@@ -1,6 +1,6 @@
 {
   "name": "ESP32 AIBox Media Controller",
+  "content_type": "integration",
   "render_readme": true,
-  "iot_class": "calculated",
-  "zip_release": true
+  "homeassistant": "2024.1.0",
 }
