@@ -2,5 +2,5 @@
   "name": "ESP32 AIBox Media Controller",
   "render_readme": true,
   "iot_class": "calculated",
-  "zip_release": false
+  "zip_release": true
 }
