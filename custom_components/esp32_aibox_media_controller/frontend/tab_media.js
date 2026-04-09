@@ -52,6 +52,7 @@ export const TabMediaMixin = {
     this._currentPlaybackListSignature = "";
     this._currentPlaybackListIndex = -1;
     this._multiroomSelectedEntities = [];
+    this._multiroomExpanded = false;
   },
 
   _parseJSONSafe(data) {
@@ -940,9 +941,18 @@ export const TabMediaMixin = {
     const multiroomSpeakers = this._layDanhSachLoaMultiroom();
     const multiroomSelected = this._layEntityLoaMultiroomDaChon();
     const multiroomSelectedSet = new Set(multiroomSelected);
+    const multiroomExpanded = Boolean(this._multiroomExpanded);
+    const multiroomSelectedNames = multiroomSpeakers
+      .filter((speaker) => multiroomSelectedSet.has(String(speaker.entity_id || '')))
+      .map((speaker) => speaker.name || speaker.entity_id);
+    const multiroomSummary = multiroomSelectedNames.length === 0
+      ? 'Chưa chọn loa nào.'
+      : multiroomSelectedNames.length <= 2
+        ? `Đã chọn: ${multiroomSelectedNames.join(' · ')}`
+        : `Đã chọn: ${multiroomSelectedNames.slice(0, 2).join(' · ')} +${multiroomSelectedNames.length - 2} loa`;
     const multiroomHtml = multiroomSpeakers.length <= 1 ? '' : `
-        <section class="multiroom-panel">
-          <div class="multiroom-hero">
+        <section class="multiroom-panel ${multiroomExpanded ? 'expanded' : 'collapsed'}">
+          <div class="multiroom-hero multiroom-hero-collapsible">
             <div class="multiroom-hero-icon"><ha-icon icon="mdi:speaker-multiple"></ha-icon></div>
             <div class="multiroom-hero-copy">
               <div class="multiroom-eyebrow">Multiroom</div>
@@ -950,40 +960,55 @@ export const TabMediaMixin = {
                 <div class="multiroom-title">Phát đồng thời nhiều loa</div>
                 <span class="multiroom-count">${multiroomSelected.length}/${multiroomSpeakers.length} loa</span>
               </div>
-              <div class="multiroom-subtitle">Chọn loa nhận lệnh phát cùng lúc. Metadata bài hát sẽ được đẩy sang cả loa phụ.</div>
+              <div class="multiroom-summary">${this._maHoaHtml(multiroomSummary)}</div>
             </div>
-            <div class="multiroom-toolbar">
-              <button type="button" id="btn-multiroom-current" class="mini-btn">Loa hiện tại</button>
-              <button type="button" id="btn-multiroom-all" class="mini-btn mini-btn-accent">Chọn tất cả</button>
-            </div>
+            <button
+              type="button"
+              id="btn-multiroom-toggle"
+              class="multiroom-toggle ${multiroomExpanded ? 'expanded' : ''}"
+              aria-expanded="${multiroomExpanded ? 'true' : 'false'}"
+              title="${multiroomExpanded ? 'Ẩn chọn loa' : 'Hiện chọn loa'}"
+            >
+              <span>${multiroomExpanded ? 'Ẩn' : 'Hiện'}</span>
+              <ha-icon icon="mdi:chevron-down"></ha-icon>
+            </button>
           </div>
-          <div class="multiroom-grid">
-            ${multiroomSpeakers.map((speaker) => {
-              const entityId = String(speaker.entity_id || '');
-              const checked = multiroomSelectedSet.has(entityId);
-              const isCurrent = entityId === this._config?.entity;
-              const stateText = this._moTaTrangThaiLoaMultiroom(speaker.state, checked);
-              return `
-                <label class="multiroom-card ${checked ? 'selected' : ''} ${isCurrent ? 'current' : ''}">
-                  <input
-                    type="checkbox"
-                    class="multiroom-checkbox"
-                    data-entity-id="${this._maHoaHtml(entityId)}"
-                    ${checked ? 'checked' : ''}
-                  />
-                  <span class="multiroom-checkmark"><ha-icon icon="mdi:check-bold"></ha-icon></span>
-                  <span class="multiroom-speaker-icon"><ha-icon icon="mdi:speaker-wireless"></ha-icon></span>
-                  <span class="multiroom-card-body">
-                    <span class="multiroom-chip-label">${this._maHoaHtml(speaker.name || entityId)}</span>
-                    <span class="multiroom-card-state">${this._maHoaHtml(stateText)}</span>
-                  </span>
-                  <span class="multiroom-tags">
-                    ${checked ? `<span class="multiroom-badge accent">Đã chọn</span>` : ''}
-                    ${isCurrent ? `<span class="multiroom-badge">Hiện tại</span>` : ''}
-                  </span>
-                </label>
-              `;
-            }).join('')}
+          <div class="multiroom-body ${multiroomExpanded ? 'expanded' : 'collapsed'}">
+            <div class="multiroom-toolbar">
+              <div class="multiroom-subtitle">Chọn loa nhận lệnh phát cùng lúc. Metadata bài hát sẽ được đẩy sang cả loa phụ.</div>
+              <div class="multiroom-toolbar-actions">
+                <button type="button" id="btn-multiroom-current" class="mini-btn">Loa hiện tại</button>
+                <button type="button" id="btn-multiroom-all" class="mini-btn mini-btn-accent">Chọn tất cả</button>
+              </div>
+            </div>
+            <div class="multiroom-grid">
+              ${multiroomSpeakers.map((speaker) => {
+                const entityId = String(speaker.entity_id || '');
+                const checked = multiroomSelectedSet.has(entityId);
+                const isCurrent = entityId === this._config?.entity;
+                const stateText = this._moTaTrangThaiLoaMultiroom(speaker.state, checked);
+                return `
+                  <label class="multiroom-card ${checked ? 'selected' : ''} ${isCurrent ? 'current' : ''}">
+                    <input
+                      type="checkbox"
+                      class="multiroom-checkbox"
+                      data-entity-id="${this._maHoaHtml(entityId)}"
+                      ${checked ? 'checked' : ''}
+                    />
+                    <span class="multiroom-checkmark"><ha-icon icon="mdi:check-bold"></ha-icon></span>
+                    <span class="multiroom-speaker-icon"><ha-icon icon="mdi:speaker-wireless"></ha-icon></span>
+                    <span class="multiroom-card-body">
+                      <span class="multiroom-chip-label">${this._maHoaHtml(speaker.name || entityId)}</span>
+                      <span class="multiroom-card-state">${this._maHoaHtml(stateText)}</span>
+                    </span>
+                    <span class="multiroom-tags">
+                      ${checked ? `<span class="multiroom-badge accent">Đã chọn</span>` : ''}
+                      ${isCurrent ? `<span class="multiroom-badge">Hiện tại</span>` : ''}
+                    </span>
+                  </label>
+                `;
+              }).join('')}
+            </div>
           </div>
         </section>
     `;
@@ -1246,15 +1271,25 @@ export const TabMediaMixin = {
           .modal-btn-danger { background: #ef4444; color: #fff; }
           .modal-btn-danger:hover { filter: brightness(1.1); }
           .modal-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-          .multiroom-panel { display: grid; gap: 14px; margin: 10px 12px 12px; padding: 14px; border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.04)); box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 10px 28px rgba(0,0,0,0.14); }
+          .multiroom-panel { display: grid; gap: 0; margin: 10px 12px 12px; padding: 14px; border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.04)); box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 10px 28px rgba(0,0,0,0.14); }
+          .multiroom-panel.expanded { gap: 12px; }
           .multiroom-hero { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
           .multiroom-hero-icon { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 14px; color: #fff; background: linear-gradient(135deg, rgba(129,140,248,0.95), rgba(168,85,247,0.95)); box-shadow: 0 10px 24px rgba(129,140,248,0.28); }
           .multiroom-eyebrow { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.72); margin-bottom: 2px; }
           .multiroom-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
           .multiroom-title { font-size: 15px; font-weight: 800; color: var(--text); }
           .multiroom-count { font-size: 11px; font-weight: 700; color: #fff; padding: 5px 10px; border-radius: 999px; background: rgba(129,140,248,0.22); border: 1px solid rgba(129,140,248,0.34); }
-          .multiroom-subtitle { font-size: 12px; color: var(--muted); margin-top: 3px; max-width: 560px; }
-          .multiroom-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+          .multiroom-summary { font-size: 12px; color: var(--muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .multiroom-toggle { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06); color: var(--text); font-size: 12px; font-weight: 700; cursor: pointer; transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease; }
+          .multiroom-toggle:hover { background: rgba(129,140,248,0.12); border-color: rgba(129,140,248,0.26); }
+          .multiroom-toggle ha-icon { --mdc-icon-size: 18px; transition: transform 0.22s ease; }
+          .multiroom-toggle.expanded ha-icon { transform: rotate(180deg); }
+          .multiroom-body { display: grid; gap: 12px; overflow: hidden; max-height: 1200px; opacity: 1; transform: translateY(0); transition: max-height 0.28s ease, opacity 0.22s ease, transform 0.22s ease, margin-top 0.22s ease; }
+          .multiroom-body.collapsed { max-height: 0; opacity: 0; transform: translateY(-6px); pointer-events: none; margin-top: 0; }
+          .multiroom-body.expanded { margin-top: 2px; }
+          .multiroom-toolbar { display: flex; align-items: flex-start; gap: 10px; justify-content: space-between; flex-wrap: wrap; }
+          .multiroom-toolbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+          .multiroom-subtitle { font-size: 12px; color: var(--muted); max-width: 560px; }
           .multiroom-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; }
           .multiroom-card { position: relative; display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 14px 14px 14px 12px; border-radius: 18px; border: 1px solid rgba(255,255,255,0.08); background: rgba(13,18,32,0.46); color: var(--text); cursor: pointer; overflow: hidden; transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease; }
           .multiroom-card::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at top right, rgba(129,140,248,0.18), transparent 42%); opacity: 0.9; pointer-events: none; }
@@ -1274,9 +1309,11 @@ export const TabMediaMixin = {
           .multiroom-badge.accent { background: rgba(129,140,248,0.18); color: #fff; border-color: rgba(129,140,248,0.28); }
 
           @media (max-width: 450px) {
-            .multiroom-hero { grid-template-columns: 1fr; }
+            .multiroom-hero { grid-template-columns: auto minmax(0, 1fr); }
+            .multiroom-toggle { grid-column: 1 / -1; justify-content: center; }
             .multiroom-toolbar { justify-content: stretch; }
-            .multiroom-toolbar .mini-btn { flex: 1; justify-content: center; }
+            .multiroom-toolbar-actions { width: 100%; }
+            .multiroom-toolbar-actions .mini-btn { flex: 1; justify-content: center; }
             .multiroom-grid { grid-template-columns: 1fr; }
             .multiroom-card { grid-template-columns: auto auto minmax(0, 1fr); }
             .multiroom-tags { grid-column: 2 / span 2; flex-direction: row; justify-content: flex-start; align-items: center; flex-wrap: wrap; }
@@ -1623,6 +1660,14 @@ export const TabMediaMixin = {
           });
       });
     }
+
+    root.querySelector("#btn-multiroom-toggle")?.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      removeFocus();
+      this._multiroomExpanded = !this._multiroomExpanded;
+      this._veGiaoDien();
+    });
 
     root.querySelector("#btn-multiroom-all")?.addEventListener("click", (ev) => {
       ev.preventDefault();
