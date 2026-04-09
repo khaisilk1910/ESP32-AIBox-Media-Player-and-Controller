@@ -128,7 +128,7 @@ search_zing:
 
 play_youtube:
   name: Play YouTube by video id
-  description: Play a YouTube item by video id (for example from last_music_search.items).
+  description: Play a YouTube item by video id (for example from last_music_search.items). Supports multiroom when speaker_entities is provided.
   target:
     entity:
       integration: esp32_aibox_media_controller
@@ -138,10 +138,18 @@ play_youtube:
       required: true
       selector:
         text:
+    speaker_entities:
+      required: false
+      selector:
+        entity:
+          multiple: true
+          filter:
+            integration: esp32_aibox_media_controller
+            domain: media_player
 
 play_zing:
   name: Play Zing MP3 by song id
-  description: Play a Zing MP3 song by song_id (for example from last_music_search.items).
+  description: Play a Zing MP3 song by song_id (for example from last_music_search.items). Supports multiroom when speaker_entities is provided.
   target:
     entity:
       integration: esp32_aibox_media_controller
@@ -151,6 +159,14 @@ play_zing:
       required: true
       selector:
         text:
+    speaker_entities:
+      required: false
+      selector:
+        entity:
+          multiple: true
+          filter:
+            integration: esp32_aibox_media_controller
+            domain: media_player
 
 wake_word_set_enabled:
   name: Wake word set enabled
@@ -717,13 +733,25 @@ playlist_remove_song:
 
 playlist_play:
   name: "Play Playlist"
-  description: "Phát toàn bộ playlist."
+  description: "Phát playlist và có thể phát multiroom nếu truyền speaker_entities."
+  target:
+    entity:
+      integration: esp32_aibox_media_controller
+      domain: media_player
   fields:
     playlist_id:
       name: "Playlist ID"
       required: true
       selector:
         text:
+    speaker_entities:
+      required: false
+      selector:
+        entity:
+          multiple: true
+          filter:
+            integration: esp32_aibox_media_controller
+            domain: media_player
 
 alarm_list:
   name: Get alarms

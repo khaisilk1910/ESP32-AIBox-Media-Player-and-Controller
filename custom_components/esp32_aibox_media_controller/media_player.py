@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from contextlib import suppress
 import logging
@@ -21,6 +22,7 @@ from homeassistant.components.media_player import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.const import CONF_NAME
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -134,6 +136,7 @@ ATTR_EXPECT_TYPE = "expect_type"
 ATTR_QUERY = "query"
 ATTR_VIDEO_ID = "video_id"
 ATTR_SONG_ID = "song_id"
+ATTR_SPEAKER_ENTITIES = "speaker_entities"
 ATTR_SENSITIVITY = "sensitivity"
 ATTR_TEXT = "text"
 ATTR_IMAGE = "image"
@@ -258,12 +261,18 @@ async def async_setup_entry(
     )
     platform.async_register_entity_service(
         SERVICE_PLAY_YOUTUBE,
-        {vol.Required(ATTR_VIDEO_ID): cv.string},
+        {
+            vol.Required(ATTR_VIDEO_ID): cv.string,
+            vol.Optional(ATTR_SPEAKER_ENTITIES): vol.All(cv.ensure_list, [cv.entity_id]),
+        },
         "async_play_youtube",
     )
     platform.async_register_entity_service(
         SERVICE_PLAY_ZING,
-        {vol.Required(ATTR_SONG_ID): cv.string},
+        {
+            vol.Required(ATTR_SONG_ID): cv.string,
+            vol.Optional(ATTR_SPEAKER_ENTITIES): vol.All(cv.ensure_list, [cv.entity_id]),
+        },
         "async_play_zing",
     )
     platform.async_register_entity_service(
@@ -676,7 +685,14 @@ async def async_setup_entry(
         "song_index": vol.Coerce(int)
     }, "async_playlist_remove_song")
     
-    platform.async_register_entity_service("playlist_play", {"playlist_id": cv.string}, "async_playlist_play")
+    platform.async_register_entity_service(
+        "playlist_play",
+        {
+            "playlist_id": cv.string,
+            vol.Optional(ATTR_SPEAKER_ENTITIES): vol.All(cv.ensure_list, [cv.entity_id]),
+        },
+        "async_playlist_play",
+    )
 
 
 class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlayerEntity):
@@ -1273,21 +1289,146 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
         )
         self.async_write_ha_state()
 
-    async def async_play_youtube(self, video_id: str) -> None:
-        """Entity service: play YouTube song by video id."""
-        normalized_video_id = video_id.strip()
-        await self._client.async_play_youtube(normalized_video_id)
-        self._last_play = {"source": "youtube", "id": normalized_video_id}
+    def _chuan_hoa_danh_sach_loa_multiroom(self, speaker_entities: list[str] | None) -> list[str]:
+        """Normalize multiroom speaker entity ids and remove duplicates."""
+        if not speaker_entities:
+            return []
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for entity_id in speaker_entities:
+            candidate = str(entity_id or "").strip()
+            if not candidate or not candidate.startswith("media_player.") or candidate in seen:
+                continue
+            seen.add(candidate)
+            normalized.append(candidate)
+        return normalized
+
+    async def _async_play_youtube_local(self, video_id: str) -> None:
+        """Play YouTube locally on the current entity."""
+        await self._client.async_play_youtube(video_id)
+        self._last_play = {"source": "youtube", "id": video_id}
         self._last_play_pause_sent = "play"
         await self.coordinator.async_request_refresh()
 
-    async def async_play_zing(self, song_id: str) -> None:
-        """Entity service: play Zing MP3 song by song id."""
-        normalized_song_id = song_id.strip()
-        await self._client.async_play_zing(normalized_song_id)
-        self._last_play = {"source": "zingmp3", "id": normalized_song_id}
+    async def _async_play_zing_local(self, song_id: str) -> None:
+        """Play Zing locally on the current entity."""
+        await self._client.async_play_zing(song_id)
+        self._last_play = {"source": "zingmp3", "id": song_id}
         self._last_play_pause_sent = "play"
         await self.coordinator.async_request_refresh()
+
+    async def _async_goi_service_multiroom_target(
+        self,
+        service_name: str,
+        entity_id: str,
+        service_data: dict[str, Any],
+    ) -> None:
+        """Call the custom play service on a target speaker with domain fallback."""
+        payload = {"entity_id": entity_id, **service_data}
+        candidate_domains = [
+            "esp32_aibox_media_controller",
+            "media_player",
+        ]
+        last_error: Exception | None = None
+
+        for domain in candidate_domains:
+            try:
+                if self.hass.services.has_service(domain, service_name):
+                    await self.hass.services.async_call(
+                        domain,
+                        service_name,
+                        payload,
+                        blocking=True,
+                    )
+                    return
+            except Exception as err:
+                last_error = err
+
+        if last_error is not None:
+            raise last_error
+
+        raise HomeAssistantError(
+            f"Service not found for multiroom target {entity_id}: {service_name}"
+        )
+
+    async def _async_dispatch_multiroom_play(
+        self,
+        *,
+        service_name: str,
+        service_data: dict[str, Any],
+        speaker_entities: list[str],
+        local_coro_factory,
+    ) -> None:
+        """Dispatch the same play command to multiple speakers in parallel."""
+        tasks: list[asyncio.Future] = []
+
+        for entity_id in speaker_entities:
+            if entity_id == self.entity_id:
+                tasks.append(asyncio.create_task(local_coro_factory()))
+                continue
+
+            tasks.append(
+                asyncio.create_task(
+                    self._async_goi_service_multiroom_target(
+                        service_name,
+                        entity_id,
+                        service_data,
+                    )
+                )
+            )
+
+        if not tasks:
+            return
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        errors: list[str] = []
+        for entity_id, result in zip(speaker_entities, results):
+            if isinstance(result, Exception):
+                errors.append(f"{entity_id}: {result}")
+
+        if errors:
+            raise HomeAssistantError("Multiroom play failed for: " + "; ".join(errors))
+
+    async def async_play_youtube(
+        self,
+        video_id: str,
+        speaker_entities: list[str] | None = None,
+    ) -> None:
+        """Entity service: play YouTube song by video id, optionally on many speakers."""
+        normalized_video_id = video_id.strip()
+        targets = self._chuan_hoa_danh_sach_loa_multiroom(speaker_entities)
+
+        if targets and not (len(targets) == 1 and targets[0] == self.entity_id):
+            await self._async_dispatch_multiroom_play(
+                service_name=SERVICE_PLAY_YOUTUBE,
+                service_data={ATTR_VIDEO_ID: normalized_video_id},
+                speaker_entities=targets,
+                local_coro_factory=lambda: self._async_play_youtube_local(normalized_video_id),
+            )
+            return
+
+        await self._async_play_youtube_local(normalized_video_id)
+
+    async def async_play_zing(
+        self,
+        song_id: str,
+        speaker_entities: list[str] | None = None,
+    ) -> None:
+        """Entity service: play Zing MP3 song by song id, optionally on many speakers."""
+        normalized_song_id = song_id.strip()
+        targets = self._chuan_hoa_danh_sach_loa_multiroom(speaker_entities)
+
+        if targets and not (len(targets) == 1 and targets[0] == self.entity_id):
+            await self._async_dispatch_multiroom_play(
+                service_name=SERVICE_PLAY_ZING,
+                service_data={ATTR_SONG_ID: normalized_song_id},
+                speaker_entities=targets,
+                local_coro_factory=lambda: self._async_play_zing_local(normalized_song_id),
+            )
+            return
+
+        await self._async_play_zing_local(normalized_song_id)
 
     async def async_wake_word_set_enabled(self, enabled: bool) -> None:
         """Entity service: enable/disable wake word."""
@@ -2242,7 +2383,7 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
         }
         self.async_write_ha_state()
 
-    async def async_playlist_play(self, playlist_id):
+    async def async_playlist_play(self, playlist_id, speaker_entities=None):
         pid = str(playlist_id)
         items = self._stored_items.get(pid, [])
         if items:
@@ -2251,6 +2392,6 @@ class Esp32AiboxMediaPlayer(CoordinatorEntity[Esp32AiboxCoordinator], MediaPlaye
             song_id = first_song.get("id")
             
             if source in ("zing", "zingmp3"):
-                await self.async_play_zing(song_id)
+                await self.async_play_zing(song_id, speaker_entities=speaker_entities)
             else:
-                await self.async_play_youtube(song_id)
+                await self.async_play_youtube(song_id, speaker_entities=speaker_entities)
