@@ -53,6 +53,8 @@ export const TabMediaMixin = {
     this._currentPlaybackListIndex = -1;
     this._multiroomSelectedEntities = [];
     this._multiroomExpanded = false;
+    this._multiroomStorageKeyLoaded = "";
+    this._multiroomStorageSnapshot = "";
   },
 
   _parseJSONSafe(data) {
@@ -64,6 +66,107 @@ export const TabMediaMixin = {
     return {};
   },
 
+
+  _layKhoaLuuTruMultiroom() {
+    const entityId = String(this._config?.entity || "").trim();
+    return entityId ? `esp32_aibox_multiroom::${entityId}` : "esp32_aibox_multiroom::default";
+  },
+
+  _taiTrangThaiMultiroomDaLuu(force = false) {
+    const storageKey = this._layKhoaLuuTruMultiroom();
+    if (!storageKey) return;
+    if (!force && this._multiroomStorageKeyLoaded === storageKey) return;
+
+    this._multiroomStorageKeyLoaded = storageKey;
+    try {
+      const storage = typeof window !== "undefined" ? window.localStorage : null;
+      const raw = storage?.getItem(storageKey);
+      this._multiroomStorageSnapshot = typeof raw === "string" ? raw : "";
+      if (!raw) return;
+      const parsed = this._parseJSONSafe(raw);
+      const selected = Array.isArray(parsed.selected_entities)
+        ? parsed.selected_entities
+        : (Array.isArray(parsed.selectedEntities) ? parsed.selectedEntities : []);
+      this._multiroomSelectedEntities = selected
+        .map((entityId) => String(entityId || "").trim())
+        .filter(Boolean);
+      if (typeof parsed.expanded === "boolean") this._multiroomExpanded = parsed.expanded;
+    } catch (_) {}
+  },
+
+  _luuTrangThaiMultiroomDaChon() {
+    const storageKey = this._layKhoaLuuTruMultiroom();
+    if (!storageKey) return;
+
+    const payload = {
+      selected_entities: Array.isArray(this._multiroomSelectedEntities) ? [...this._multiroomSelectedEntities] : [],
+      expanded: Boolean(this._multiroomExpanded),
+    };
+
+    try {
+      const raw = JSON.stringify(payload);
+      if (this._multiroomStorageKeyLoaded === storageKey && this._multiroomStorageSnapshot === raw) return;
+      const storage = typeof window !== "undefined" ? window.localStorage : null;
+      storage?.setItem(storageKey, raw);
+      this._multiroomStorageKeyLoaded = storageKey;
+      this._multiroomStorageSnapshot = raw;
+    } catch (_) {}
+  },
+
+  async _goiLenhDieuKhienMediaMultiroom(service, data = {}, options = {}) {
+    if (!this._hass || !this._config) return;
+
+    const fallbackService = String(options?.fallbackService || "").trim();
+    const selected = this._layEntityLoaMultiroomDaChon();
+    const entityIds = selected.length > 0 ? selected : [this._config.entity];
+    const domains = ["media_player", "esp32_aibox_media_controller"];
+
+    let successCount = 0;
+    let lastError = null;
+
+    for (const entityId of entityIds) {
+      const payload = { entity_id: entityId, ...(data || {}) };
+      let handled = false;
+
+      for (const domain of domains) {
+        if (!this._hass.services?.[domain]?.[service]) continue;
+        try {
+          await this._hass.callService(domain, service, payload);
+          handled = true;
+          successCount += 1;
+          break;
+        } catch (err) {
+          lastError = err;
+        }
+      }
+
+      if (!handled && fallbackService) {
+        for (const domain of domains) {
+          if (!this._hass.services?.[domain]?.[fallbackService]) continue;
+          try {
+            await this._hass.callService(domain, fallbackService, payload);
+            handled = true;
+            successCount += 1;
+            break;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+      }
+
+      if (!handled) {
+        try {
+          await this._hass.callService("media_player", fallbackService || service, payload);
+          successCount += 1;
+        } catch (err) {
+          lastError = err;
+          console.warn("Không thể gửi lệnh media multiroom", service, entityId, err);
+        }
+      }
+    }
+
+    if (successCount <= 0 && lastError) throw lastError;
+  },
 
   _layDanhSachLoaMultiroom() {
     const entityIds = this._timCacEntityAibox ? this._timCacEntityAibox() : [];
@@ -79,6 +182,7 @@ export const TabMediaMixin = {
   },
 
   _layEntityLoaMultiroomDaChon() {
+    this._taiTrangThaiMultiroomDaLuu();
     const available = this._layDanhSachLoaMultiroom();
     const availableIds = new Set(available.map((item) => item.entity_id));
     const raw = Array.isArray(this._multiroomSelectedEntities) ? this._multiroomSelectedEntities : [];
@@ -116,6 +220,7 @@ export const TabMediaMixin = {
     }
 
     this._multiroomSelectedEntities = next;
+    this._luuTrangThaiMultiroomDaChon();
     return next;
   },
 
@@ -348,7 +453,7 @@ export const TabMediaMixin = {
     }
 
     if (list.length === 0) {
-        await this._goiDichVu("media_player", huong === 1 ? "media_next_track" : "media_previous_track");
+        await this._goiLenhDieuKhienMediaMultiroom(huong === 1 ? "media_next_track" : "media_previous_track");
         return;
     }
 
@@ -368,7 +473,7 @@ export const TabMediaMixin = {
         this._currentPlaybackListIndex = nextIndex;
         await this._xuLyPhatMuc(nextItem, itemSource);
     } else {
-        await this._goiDichVu("media_player", huong === 1 ? "media_next_track" : "media_previous_track");
+        await this._goiLenhDieuKhienMediaMultiroom(huong === 1 ? "media_next_track" : "media_previous_track");
     }
   },
 
@@ -386,7 +491,7 @@ export const TabMediaMixin = {
         if (source.toLowerCase().includes("zing")) await this._goiDichVu("media_player", "play_zing", this._taoPayloadPhatMultiroom({ song_id: trackId }, this._taoMetadataPhat(this._thongTinPhat())));
         else await this._goiDichVu("media_player", "play_youtube", this._taoPayloadPhatMultiroom({ video_id: trackId }, this._taoMetadataPhat(this._thongTinPhat())));
       } else {
-        await this._goiDichVu("media_player", "media_play");
+        await this._goiLenhDieuKhienMediaMultiroom("media_play");
       }
     } else if (this._repeatMode === "all" || this._autoNextEnabled) {
       await this._chuyenBaiTuList(1);
@@ -676,8 +781,8 @@ export const TabMediaMixin = {
       }
     }
     this._veGiaoDien();
-    try { await this._goiDichVu("media_player", nextAction === "pause" ? "media_pause" : "media_play"); } 
-    catch (err) { await this._goiDichVu("media_player", "media_play_pause"); }
+    try { await this._goiLenhDieuKhienMediaMultiroom(nextAction === "pause" ? "media_pause" : "media_play", {}, { fallbackService: "media_play_pause" }); } 
+    catch (err) { await this._goiLenhDieuKhienMediaMultiroom("media_play_pause"); }
     await this._lamMoiEntity(300);
   },
 
@@ -1666,6 +1771,7 @@ export const TabMediaMixin = {
       ev.stopPropagation();
       removeFocus();
       this._multiroomExpanded = !this._multiroomExpanded;
+      this._luuTrangThaiMultiroomDaChon();
       this._veGiaoDien();
     });
 
@@ -1730,7 +1836,7 @@ export const TabMediaMixin = {
       this._forcePauseUntil = Date.now() + 5000; this._optimisticPlayUntil = 0; this._liveTrackKey = ""; this._livePositionSeconds = 0; this._ignorePositionUntil = Date.now() + 4000;
       this._liveDurationSeconds = 0; this._livePlaying = false; this._optimisticTrackUntil = 0; this._nowPlayingCache = { trackKey: "", title: "", artist: "", source: "", thumbnail_url: "", duration: 0 };
       this._lastPlayPauseSent = "pause"; this._dongBoTienDoDom(); this._capNhatHenGioTienDo(); this._veGiaoDien(); 
-      try { await this._goiDichVu("media_player", "media_stop"); } catch (e) { await this._goiDichVu("media_player", "media_pause"); }
+      try { await this._goiLenhDieuKhienMediaMultiroom("media_stop", {}, { fallbackService: "media_pause" }); } catch (e) { await this._goiLenhDieuKhienMediaMultiroom("media_pause"); }
       await this._lamMoiEntity(300);
     });
 
