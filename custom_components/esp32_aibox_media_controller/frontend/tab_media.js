@@ -1431,6 +1431,29 @@ export const TabMediaMixin = {
             .result-title { font-size: 12px; }
             .wave-bar { margin: 0; }
           }
+          
+          /* --- CSS CHO FOOTER --- */
+          .media-footer {
+            margin-top: auto; /* Tự động đẩy xuống đáy */
+            padding: 14px 16px;
+            text-align: center;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.45);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            background: rgba(0, 0, 0, 0.15); /* Làm nền hơi tối lại tạo chiều sâu */
+            letter-spacing: 0.2px;
+          }
+          .media-footer a {
+            color: #818cf8; /* Màu xanh tím tone-sur-tone với Multiroom icon */
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.2s ease;
+          }
+          .media-footer a:hover {
+            color: #a855f7;
+            text-decoration: underline;
+            text-shadow: 0 0 8px rgba(168, 85, 247, 0.4); /* Hiệu ứng phát sáng nhẹ khi hover */
+          }
         </style>
 
         <div class="hero ${isPlaying ? "is-playing" : "is-paused"} wave-effect-${this._waveEffect}">
@@ -1576,7 +1599,10 @@ export const TabMediaMixin = {
             </div>
         </div>
 
-      </section>
+        <div class="media-footer">
+            Đưa lên <a href="https://www.home-assistant.io/" target="_blank" rel="noopener noreferrer">Home Assistant</a> tham khảo từ nguồn <a href="https://ai-box.vn/" target="_blank" rel="noopener noreferrer">https://ai-box.vn/</a>
+        </div>
+        </section>
     `;
   },
 
