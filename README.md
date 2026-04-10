@@ -10,5 +10,5 @@
    - Vào Settings -> Integrations -> Add integration nhập `ESP32 AIBox Media Controller` để thêm
 
 
-## ⚖️ Bản quyền
+## ⚖️ Nguồn
 - Được mod lại để hiển thị lên Home Assistant từ nguồn [https://ai-box.vn/](https://ai-box.vn/)
