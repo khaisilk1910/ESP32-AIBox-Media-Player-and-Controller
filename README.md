@@ -1,5 +1,5 @@
 
-## Cài đặt
+## ⚙️ Cài đặt
 
 1. Nhấn nút bên dưới để thêm vào HACS trên Home Assistant.
 
@@ -10,5 +10,5 @@
    - Vào Settings -> Integrations -> Add integration nhập `ESP32 AIBox Media Controller` để thêm
 
 
-## Bản quyền
+## ⚖️ Bản quyền
 - Được mod lại để hiển thị lên Home Assistant từ nguồn [https://ai-box.vn/](https://ai-box.vn/)
