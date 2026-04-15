@@ -1162,7 +1162,6 @@ export const TabMediaMixin = {
                           <div class="result-duration">${this._dinhDangThoiLuong(sDuration)} <span class="source-badge">${sSource.toUpperCase()}</span></div>
                       </div>
                       <div class="result-actions">
-                          <button type="button" class="mini-btn mini-btn-danger play-btn" data-id="${this._maHoaHtml(sId)}" data-source="${this._maHoaHtml(sSource)}" data-song="${safeSongData}"><ha-icon icon="mdi:play"></ha-icon><span>Phát</span></button>
                           <button type="button" class="mini-btn delete-song-btn" data-playlist-id="${this._dangXemPlaylistId}" data-index="${Number(sIndex)}"><ha-icon icon="mdi:trash-can"></ha-icon></button>
                       </div>
                   </div>`;
@@ -1235,7 +1234,6 @@ export const TabMediaMixin = {
                   </div>
                   <div class="result-actions">
                     <button type="button" class="mini-btn mini-btn-accent add-pl-btn" data-song="${safeSongData}" data-source="${this._maHoaHtml(listSource)}" title="Thêm vào Playlist"><ha-icon icon="mdi:plus"></ha-icon></button>
-                    <button type="button" class="mini-btn mini-btn-danger play-btn" data-id="${this._maHoaHtml(itemId)}" data-source="${this._maHoaHtml(listSource)}" data-song="${safeSongData}"><ha-icon icon="mdi:play"></ha-icon><span>Phát</span></button>
                   </div>
                 </div>`;
             }).join("");
@@ -1260,12 +1258,12 @@ export const TabMediaMixin = {
           .hero-actions { display: flex; gap: 4px; align-items: center; margin-top: 4px; }
           .player-stage-new { margin-top: 14px; display: flex; align-items: center; }
           
-          .cover-disc { width: 80px; height: 80px; flex: 0 0 80px; border-radius: 50%; overflow: hidden; border: 2px solid rgba(255,255,255, 0.3); box-shadow: 0 6px 20px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 30% 25%, rgba(255,255,255, 0.1), rgba(0,0,0, 0.6)); position: relative; z-index: 2; transform: translate3d(0,0,0); will-change: transform, box-shadow; }
+          .cover-disc { width: 80px; height: 80px; flex: 0 0 80px; border-radius: 50%; overflow: hidden; border: 3px solid rgba(255,255,255, 0.4); box-shadow: 0 6px 20px rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; background: radial-gradient(circle at 30% 25%, rgba(255,255,255, 0.1), rgba(0,0,0, 0.6)); position: relative; z-index: 2; transform: translate3d(0,0,0); will-change: transform, box-shadow; }
           .cover-disc img { width: 100%; height: 100%; object-fit: cover; }
           .cover-disc ha-icon { color: #fff; --mdc-icon-size: 28px; }
           
           @keyframes discSpin { 0% { transform: rotate(0deg) translate3d(0,0,0); } 100% { transform: rotate(360deg) translate3d(0,0,0); } }
-          @keyframes discGlow { 0% { box-shadow: 0 0 10px var(--accent), 0 0 20px var(--accent), inset 0 0 10px rgba(255,255,255,0.3); border-color: rgba(255,255,255,0.6); } 100% { box-shadow: 0 0 20px var(--accent), 0 0 45px var(--accent), inset 0 0 20px var(--accent); border-color: var(--accent); } }
+          @keyframes discGlow { 0% { box-shadow: 0 0 15px var(--accent), 0 0 30px var(--accent), inset 0 0 15px rgba(255,255,255,0.4); border-color: rgba(255,255,255,0.8); } 100% { box-shadow: 0 0 30px var(--accent), 0 0 60px var(--accent), 0 0 90px var(--accent), inset 0 0 30px var(--accent); border-color: var(--accent); } }
           
           .hero.is-playing .cover-disc.spinning { animation: discSpin 8s linear infinite, discGlow 1.5s ease-in-out infinite alternate; }
 
@@ -1277,14 +1275,14 @@ export const TabMediaMixin = {
           .icon-btn-transparent ha-icon { --mdc-icon-size: 28px; }
           
           .waveform-full { width: 100%; height: 75px; display: flex; align-items: flex-end; justify-content: space-between; overflow: visible !important; padding: 0; margin-top: -15px; box-sizing: border-box; }
-          .wave-bar { flex: 1; margin: 0 1px; height: var(--h); border-radius: 4px; background: var(--accent); transform-origin: bottom; opacity: 0.6; box-shadow: 0 0 6px var(--accent); transform: translate3d(0,0,0); will-change: transform; }
+          .wave-bar { flex: 1; margin: 0 1px; height: var(--h); border-radius: 4px; background: var(--accent); transform-origin: bottom; opacity: 1; box-shadow: 0 0 2px var(--accent); transform: translate3d(0,0,0); will-change: transform; }
           
-          .hero.is-playing.wave-effect-0 .wave-bar { animation: waveDance calc(400ms + (var(--i) * 15ms)) ease-in-out infinite alternate; opacity: 1; }
-          .hero.is-playing.wave-effect-1 .wave-bar { animation: wavePulse calc(350ms + (var(--i) * 12ms)) ease-in-out infinite alternate; opacity: 1; }
-          .hero.is-playing.wave-effect-2 .wave-bar { animation: waveSweep 1.2s ease-in-out infinite; animation-delay: calc(var(--i) * 0.05s); opacity: 1; }
+          .hero.is-playing.wave-effect-0 .wave-bar { animation: waveDance calc(400ms + (var(--i) * 15ms)) ease-in-out infinite alternate; }
+          .hero.is-playing.wave-effect-1 .wave-bar { animation: wavePulse calc(350ms + (var(--i) * 12ms)) ease-in-out infinite alternate; }
+          .hero.is-playing.wave-effect-2 .wave-bar { animation: waveSweep 1.2s ease-in-out infinite; animation-delay: calc(var(--i) * 0.05s); }
           
           @keyframes waveDance { 0% { transform: scaleY(0.2) translate3d(0,0,0); } 100% { transform: scaleY(1.3) translate3d(0,0,0); } }
-          @keyframes wavePulse { 0% { transform: scaleY(0.1) translate3d(0,0,0); filter: hue-rotate(45deg); box-shadow: 0 0 5px var(--accent); } 100% { transform: scaleY(1.2) translate3d(0,0,0); filter: hue-rotate(0deg); box-shadow: 0 0 15px var(--accent); } }
+          @keyframes wavePulse { 0% { transform: scaleY(0.1) translate3d(0,0,0); filter: hue-rotate(45deg); } 100% { transform: scaleY(1.2) translate3d(0,0,0); filter: hue-rotate(0deg); } }
           @keyframes waveSweep { 0%, 100% { transform: scaleY(0.15) translate3d(0,0,0); } 50% { transform: scaleY(1.4) translate3d(0,0,0); } }
           
           .progress-row { display: flex; align-items: center; gap: 10px; padding: 4px 0 12px; }
@@ -1424,7 +1422,8 @@ export const TabMediaMixin = {
             .multiroom-tags { grid-column: 2 / span 2; flex-direction: row; justify-content: flex-start; align-items: center; flex-wrap: wrap; }
 
             .cover-disc { width: 60px; height: 60px; flex: 0 0 60px; border-width: 1px; }
-            .subtabs { grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 8px 8px 4px; }
+            .subtabs { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 8px 4px 4px; }
+            .subtab { padding: 6px 2px; font-size: 11px; }
             .search-row { padding: 6px 8px; gap: 8px; }
             .result-item { grid-template-columns: 44px minmax(0, 1fr) auto; padding: 6px 8px; gap: 8px; }
             .thumb, .thumb-wrap { width: 44px; height: 44px; }
@@ -1600,7 +1599,7 @@ export const TabMediaMixin = {
         </div>
 
         <div class="media-footer">
-            Đưa lên <a href="https://www.home-assistant.io/" target="_blank" rel="noopener noreferrer">Home Assistant</a> tham khảo từ nguồn <a href="https://ai-box.vn/" target="_blank" rel="noopener noreferrer">https://ai-box.vn/</a>
+            Mod từ <a href="https://ai-box.vn/" target="_blank" rel="noopener noreferrer">https://ai-box.vn/</a>
         </div>
         </section>
     `;
@@ -1619,91 +1618,11 @@ export const TabMediaMixin = {
     };
 
     // ==========================================
-    // LOGIC TỰ ĐỘNG CUỘN ĐẾN BÀI HÁT ĐANG PHÁT
+    // LOGIC TỰ ĐỘNG CUỘN ĐẾN BÀI HÁT ĐANG PHÁT (Đã tắt theo yêu cầu)
     // ==========================================
     const resultsContainer = root.querySelector(".results");
     if (resultsContainer) {
-        
-        const scrollToActiveItem = () => {
-            const activeItem = resultsContainer.querySelector(".is-playing-item");
-            if (activeItem && !this._isHoveringResults) {
-                activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                this._isScrollingSmoothly = true;
-                clearTimeout(this._smoothScrollTimeout);
-                this._smoothScrollTimeout = setTimeout(() => {
-                    this._lastResultsScrollTop = resultsContainer.scrollTop;
-                    this._isScrollingSmoothly = false;
-                }, 800);
-            }
-        };
-
-        const isVisible = (el) => {
-            if (!el) return false;
-            const elRect = el.getBoundingClientRect();
-            const containerRect = resultsContainer.getBoundingClientRect();
-            return (elRect.top >= containerRect.top - 20) && (elRect.bottom <= containerRect.bottom + 20);
-        };
-
-        resultsContainer.addEventListener("mouseenter", () => { this._isHoveringResults = true; });
-
-        resultsContainer.addEventListener("mouseleave", () => {
-            this._isHoveringResults = false;
-            const activeItem = resultsContainer.querySelector(".is-playing-item");
-            if (activeItem && !isVisible(activeItem)) {
-                scrollToActiveItem();
-            }
-        });
-
-        resultsContainer.addEventListener("touchstart", () => { this._isHoveringResults = true; }, { passive: true });
-
-        resultsContainer.addEventListener("touchend", () => {
-            setTimeout(() => {
-                this._isHoveringResults = false;
-                const activeItem = resultsContainer.querySelector(".is-playing-item");
-                if (activeItem && !isVisible(activeItem)) {
-                    scrollToActiveItem();
-                }
-            }, 1500); 
-        }, { passive: true });
-
-        requestAnimationFrame(() => {
-            const activeItem = resultsContainer.querySelector(".is-playing-item");
-            let isNewActiveSong = false;
-
-            if (activeItem) {
-                const activeId = activeItem.dataset.id;
-                if (this._lastActiveItemId !== activeId) {
-                    isNewActiveSong = true;
-                    this._lastActiveItemId = activeId;
-                }
-            } else {
-                this._lastActiveItemId = null;
-            }
-
-            if (!this._forceScrollToActive && !isNewActiveSong) {
-                resultsContainer.scrollTop = this._lastResultsScrollTop || 0;
-            }
-
-            const shouldAutoScroll = activeItem && !this._isHoveringResults && (
-                this._forceScrollToActive ||   
-                isNewActiveSong ||             
-                !isVisible(activeItem)         
-            );
-
-            if (shouldAutoScroll) {
-                scrollToActiveItem();
-                this._forceScrollToActive = false; 
-            }
-
-            setTimeout(() => {
-                resultsContainer.addEventListener("scroll", (ev) => {
-                    if (this._isScrollingSmoothly) return;
-                    if (ev.target.scrollHeight >= ev.target.clientHeight) {
-                        this._lastResultsScrollTop = ev.target.scrollTop;
-                    }
-                }, { passive: true });
-            }, 100); 
-        });
+        // Đã loại bỏ logic cuộn scrollToActiveItem để giao diện không bị giật tự động
     }
 
     // ==========================================
@@ -1919,6 +1838,30 @@ export const TabMediaMixin = {
       try { await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel }); } catch(e){}
     });
 
+    const volumeSlider = root.querySelector("#media-volume");
+    if (volumeSlider) {
+        volumeSlider.addEventListener("input", (ev) => {
+            const newVol = parseInt(ev.target.value, 10);
+            const volumeFill = root.querySelector(".modern-volume-fill");
+            if (volumeFill) volumeFill.style.width = `${newVol}%`;
+            const volumeText = root.querySelector(".modern-volume-text");
+            if (volumeText) volumeText.innerText = `${newVol}%`;
+        });
+        
+        volumeSlider.addEventListener("change", async (ev) => {
+            removeFocus();
+            const newVol = parseInt(ev.target.value, 10);
+            this._volumeLevel = newVol / 100;
+            if (this._volumeLevel > 0) this._preMuteVolumeLevel = null;
+            const muteIcon = root.querySelector("#btn-mute-toggle");
+            if (muteIcon) {
+                muteIcon.className = newVol === 0 ? 'is-muted' : '';
+                muteIcon.setAttribute('icon', newVol === 0 ? "mdi:volume-mute" : (newVol < 40 ? "mdi:volume-low" : (newVol < 80 ? "mdi:volume-medium" : "mdi:volume-high")));
+            }
+            try { await this._goiDichVu("media_player", "volume_set", { volume_level: this._volumeLevel }); } catch(e){}
+        });
+    }
+
     // FIX LỖI COVER/THÔNG TIN: Trích xuất trực tiếp bài hát từ mảng items được lưu trên RAM, thay vì phụ thuộc hoàn toàn vào data-song
     const playFromDataset = async (dataset) => { 
         removeFocus();
@@ -1946,8 +1889,6 @@ export const TabMediaMixin = {
         
         await this._xuLyPhatMuc(songObj, dataset.source || ""); 
     };
-
-    root.querySelectorAll(".play-btn").forEach(el => el.addEventListener("click", async (ev) => { ev.preventDefault(); ev.stopPropagation(); await playFromDataset(el.dataset); }));
     
     root.querySelectorAll(".add-pl-btn").forEach(el => el.addEventListener("click", async (ev) => {
       ev.preventDefault(); ev.stopPropagation(); 
