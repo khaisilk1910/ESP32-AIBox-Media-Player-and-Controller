@@ -55,6 +55,10 @@ export const TabMediaMixin = {
     this._multiroomExpanded = false;
     this._multiroomStorageKeyLoaded = "";
     this._multiroomStorageSnapshot = "";
+
+    // --- State ẩn/hiện khu vực danh sách media ---
+    this._mediaLibraryVisible = true;
+    this._mediaLibraryOutsideClickHandler = null;
   },
 
   _parseJSONSafe(data) {
@@ -1018,9 +1022,48 @@ export const TabMediaMixin = {
     });
   },
 
+  _layTenKieuSong(effect = this._waveEffect) {
+    const names = [
+      "Neon tím xanh",
+      "Bass tím sắc nét",
+      "Làn sóng quét",
+      "Cầu vồng điện tử",
+      "Gương trung tâm",
+      "Equalizer bậc thang",
+      "Lửa neon",
+      "Aurora lạnh",
+      "Pha lê cyan",
+      "Bass drop mạnh",
+    ];
+    const index = ((Number(effect) || 0) % names.length + names.length) % names.length;
+    return names[index];
+  },
+
   _veCotSong() {
-    const seeds = [18, 36, 14, 48, 26, 40, 22, 52, 30, 44, 20, 38, 50, 10, 25, 45, 15, 35, 42, 28, 55, 32];
-    return Array.from({ length: 60 }, (_, idx) => `<span class="wave-bar" style="--i:${idx};--h:${seeds[idx % seeds.length]}px"></span>`).join("");
+    const presets = [
+      [18, 36, 14, 48, 26, 40, 22, 52, 30, 44, 20, 38, 50, 10, 25, 45, 15, 35, 42, 28, 55, 32],
+      [12, 24, 42, 58, 36, 20, 14, 46, 62, 30, 18, 52, 40, 22, 12, 34, 56, 28, 16, 48],
+      [10, 14, 20, 28, 38, 50, 62, 54, 42, 30, 22, 16, 12, 18, 30, 44, 58, 64, 48, 34],
+      [24, 46, 30, 58, 20, 42, 64, 28, 52, 36, 18, 48, 60, 32, 22, 54, 40, 14],
+      [12, 18, 28, 42, 58, 66, 58, 42, 28, 18, 12, 16, 30, 50, 64, 50, 30, 16],
+      [16, 16, 32, 32, 52, 52, 24, 24, 64, 64, 38, 38, 18, 18, 46, 46, 58, 58],
+      [20, 52, 34, 64, 42, 26, 58, 18, 48, 62, 30, 40, 56, 22, 50, 36],
+      [14, 34, 56, 48, 26, 62, 40, 18, 52, 60, 30, 44, 22, 54, 36, 16],
+      [18, 44, 62, 36, 24, 52, 68, 42, 20, 58, 46, 30, 64, 38, 16, 50],
+      [10, 20, 64, 16, 26, 58, 18, 34, 70, 22, 14, 54, 28, 42, 62, 12],
+    ];
+    const effect = ((Number(this._waveEffect) || 0) % presets.length + presets.length) % presets.length;
+    const seeds = presets[effect] || presets[0];
+    const totalBars = 60;
+    return Array.from({ length: totalBars }, (_, idx) => {
+      const height = seeds[idx % seeds.length];
+      const tone = Math.round((idx / Math.max(1, totalBars - 1)) * 300 + 185);
+      const delay = (idx % 16) * 32;
+      const durFast = 360 + ((idx % 10) * 24);
+      const durMid = 520 + ((idx % 12) * 30);
+      const durSlow = 900 + ((idx % 14) * 44);
+      return `<span class="wave-bar" style="--i:${idx};--h:${height}px;--tone:${tone};--delay:${delay}ms;--dur-fast:${durFast}ms;--dur-mid:${durMid}ms;--dur-slow:${durSlow}ms"></span>`;
+    }).join("");
   },
 
   _veTabMedia(stateObj) {
@@ -1036,6 +1079,8 @@ export const TabMediaMixin = {
     const coverUrl = this._maHoaHtml(playback.thumbnail_url || "");
     const repeatIcon = this._repeatMode === "one" ? "mdi:repeat-once" : (this._repeatMode === "all" ? "mdi:repeat" : "mdi:repeat-off");
     const volIcon = volumePercent === 0 ? "mdi:volume-mute" : (volumePercent < 40 ? "mdi:volume-low" : (volumePercent < 80 ? "mdi:volume-medium" : "mdi:volume-high"));
+    const waveName = this._layTenKieuSong(this._waveEffect);
+    const waveNumber = ((Number(this._waveEffect) || 0) % 10 + 10) % 10 + 1;
     
     const currentQuery = this._query || playback.search?.query || "";
     let hasHighlightedCurrent = false;
@@ -1055,6 +1100,7 @@ export const TabMediaMixin = {
       : multiroomSelectedNames.length <= 2
         ? `Đã chọn: ${multiroomSelectedNames.join(' · ')}`
         : `Đã chọn: ${multiroomSelectedNames.slice(0, 2).join(' · ')} +${multiroomSelectedNames.length - 2} loa`;
+    const mediaLibraryVisible = this._mediaLibraryVisible !== false;
     const multiroomHtml = multiroomSpeakers.length <= 1 ? '' : `
         <section class="multiroom-panel ${multiroomExpanded ? 'expanded' : 'collapsed'}">
           <div class="multiroom-hero multiroom-hero-collapsible">
@@ -1274,16 +1320,71 @@ export const TabMediaMixin = {
           .btn-large ha-icon { --mdc-icon-size: 46px; }
           .icon-btn-transparent ha-icon { --mdc-icon-size: 28px; }
           
-          .waveform-full { width: 100%; height: 75px; display: flex; align-items: flex-end; justify-content: space-between; overflow: visible !important; padding: 0; margin-top: -15px; box-sizing: border-box; }
-          .wave-bar { flex: 1; margin: 0 1px; height: var(--h); border-radius: 4px; background: var(--accent); transform-origin: bottom; opacity: 1; box-shadow: 0 0 2px var(--accent); transform: translate3d(0,0,0); will-change: transform; }
+          .waveform-full {
+            --wave-gap: clamp(2px, 0.7vw, 6px);
+            width: 100%;
+            height: 78px;
+            display: grid;
+            grid-auto-flow: column;
+            grid-auto-columns: minmax(3px, 1fr);
+            align-items: end;
+            gap: var(--wave-gap);
+            overflow: hidden !important;
+            padding: 0 3px;
+            margin-top: -15px;
+            box-sizing: border-box;
+            transform: translate3d(0,0,0);
+          }
+          .wave-bar {
+            width: 100%;
+            min-width: 0;
+            height: min(var(--h), 70px);
+            border-radius: 999px;
+            background: linear-gradient(180deg, #ffffff 0%, #ddd6fe 18%, #a78bfa 52%, #22d3ee 100%);
+            transform-origin: bottom;
+            opacity: 0.98;
+            box-shadow: 0 0 1px rgba(255,255,255,0.95), 0 0 8px rgba(167,139,250,0.82), inset 0 1px 1px rgba(255,255,255,0.88);
+            transform: scaleY(0.72) translate3d(0,0,0);
+            will-change: transform, filter, opacity;
+          }
+          .hero.is-paused .wave-bar { opacity: 0.74; transform: scaleY(0.58) translate3d(0,0,0); }
+
+          .hero.wave-effect-0 .wave-bar { background: linear-gradient(180deg, #ffffff 0%, #e9d5ff 16%, #a78bfa 52%, #22d3ee 100%); box-shadow: 0 0 1px rgba(255,255,255,0.95), 0 0 9px rgba(167,139,250,0.86), inset 0 1px 1px rgba(255,255,255,0.9); }
+          .hero.wave-effect-1 .wave-bar { background: linear-gradient(180deg, #ffffff 0%, #c4b5fd 22%, #8b5cf6 62%, #5b21b6 100%); box-shadow: 0 0 2px rgba(255,255,255,0.9), 0 0 10px rgba(139,92,246,0.9); }
+          .hero.wave-effect-2 .wave-bar { background: linear-gradient(180deg, #f0f9ff 0%, #93c5fd 26%, #38bdf8 58%, #2563eb 100%); box-shadow: 0 0 2px rgba(240,249,255,0.9), 0 0 10px rgba(56,189,248,0.86); }
+          .hero.wave-effect-3 .wave-bar { background: linear-gradient(180deg, #ffffff 0%, hsl(var(--tone) 100% 78%) 28%, hsl(calc(var(--tone) + 44) 96% 58%) 74%, #22d3ee 100%); box-shadow: 0 0 2px rgba(255,255,255,0.95), 0 0 10px hsl(var(--tone) 100% 64% / 0.78); }
+          .hero.wave-effect-4 .wave-bar { background: linear-gradient(180deg, #ffffff 0%, #bae6fd 20%, #a78bfa 54%, #06b6d4 100%); box-shadow: 0 0 2px rgba(255,255,255,0.95), 0 0 11px rgba(34,211,238,0.82); }
+          .hero.wave-effect-5 .wave-bar { border-radius: 4px; background: linear-gradient(180deg, #ffffff 0%, #f5d0fe 20%, #c084fc 52%, #7c3aed 100%); box-shadow: 0 0 1px rgba(255,255,255,0.95), 0 0 8px rgba(192,132,252,0.88); }
+          .hero.wave-effect-6 .wave-bar { background: linear-gradient(180deg, #fff7ed 0%, #fdba74 24%, #fb7185 58%, #a855f7 100%); box-shadow: 0 0 2px rgba(255,247,237,0.95), 0 0 12px rgba(251,113,133,0.9); }
+          .hero.wave-effect-7 .wave-bar { background: linear-gradient(180deg, #ecfeff 0%, #99f6e4 28%, #67e8f9 58%, #818cf8 100%); box-shadow: 0 0 2px rgba(236,254,255,0.95), 0 0 11px rgba(45,212,191,0.84); }
+          .hero.wave-effect-8 .wave-bar { background: linear-gradient(180deg, #ffffff 0%, #e0f2fe 22%, #7dd3fc 52%, #a78bfa 100%); box-shadow: 0 0 2px rgba(255,255,255,0.95), 0 0 9px rgba(125,211,252,0.9), inset 0 0 2px rgba(255,255,255,0.9); }
+          .hero.wave-effect-9 .wave-bar { background: linear-gradient(180deg, #ffffff 0%, #f0abfc 20%, #a78bfa 48%, #22d3ee 100%); box-shadow: 0 0 2px rgba(255,255,255,0.95), 0 0 13px rgba(168,85,247,0.88); }
+          .hero.wave-effect-4 .wave-bar:nth-child(odd), .hero.wave-effect-8 .wave-bar:nth-child(3n) { opacity: 0.9; }
+          .hero.wave-effect-5 .wave-bar:nth-child(2n) { height: max(12px, calc(var(--h) - 14px)); }
+          .hero.wave-effect-6 .wave-bar:nth-child(4n) { height: max(16px, calc(var(--h) - 8px)); }
+          .hero.wave-effect-9 .wave-bar:nth-child(5n) { height: 70px; }
           
-          .hero.is-playing.wave-effect-0 .wave-bar { animation: waveDance calc(400ms + (var(--i) * 15ms)) ease-in-out infinite alternate; }
-          .hero.is-playing.wave-effect-1 .wave-bar { animation: wavePulse calc(350ms + (var(--i) * 12ms)) ease-in-out infinite alternate; }
-          .hero.is-playing.wave-effect-2 .wave-bar { animation: waveSweep 1.2s ease-in-out infinite; animation-delay: calc(var(--i) * 0.05s); }
+          .hero.is-playing.wave-effect-0 .wave-bar { animation: waveNeon var(--dur-mid) ease-in-out infinite alternate; }
+          .hero.is-playing.wave-effect-1 .wave-bar { animation: wavePulse var(--dur-fast) cubic-bezier(.4,0,.2,1) infinite alternate; }
+          .hero.is-playing.wave-effect-2 .wave-bar { animation: waveSweep 1.18s ease-in-out infinite; animation-delay: var(--delay); }
+          .hero.is-playing.wave-effect-3 .wave-bar { animation: waveRainbow var(--dur-mid) ease-in-out infinite alternate; }
+          .hero.is-playing.wave-effect-4 .wave-bar { animation: waveMirror 900ms ease-in-out infinite alternate; animation-delay: var(--delay); }
+          .hero.is-playing.wave-effect-5 .wave-bar { animation: waveStep var(--dur-slow) steps(4, end) infinite alternate; }
+          .hero.is-playing.wave-effect-6 .wave-bar { animation: waveFlame var(--dur-fast) ease-in-out infinite alternate; }
+          .hero.is-playing.wave-effect-7 .wave-bar { animation: waveAurora 1.45s ease-in-out infinite; animation-delay: var(--delay); }
+          .hero.is-playing.wave-effect-8 .wave-bar { animation: waveCrystal var(--dur-mid) ease-in-out infinite alternate; }
+          .hero.is-playing.wave-effect-9 .wave-bar { animation: waveBass 760ms cubic-bezier(.16,1,.3,1) infinite; animation-delay: var(--delay); }
           
-          @keyframes waveDance { 0% { transform: scaleY(0.2) translate3d(0,0,0); } 100% { transform: scaleY(1.3) translate3d(0,0,0); } }
-          @keyframes wavePulse { 0% { transform: scaleY(0.1) translate3d(0,0,0); filter: hue-rotate(45deg); } 100% { transform: scaleY(1.2) translate3d(0,0,0); filter: hue-rotate(0deg); } }
-          @keyframes waveSweep { 0%, 100% { transform: scaleY(0.15) translate3d(0,0,0); } 50% { transform: scaleY(1.4) translate3d(0,0,0); } }
+          @keyframes waveNeon { 0% { transform: scaleY(0.24) translate3d(0,0,0); filter: brightness(1.06); } 100% { transform: scaleY(1.22) translate3d(0,0,0); filter: brightness(1.28); } }
+          @keyframes wavePulse { 0% { transform: scaleY(0.16) translate3d(0,0,0); filter: brightness(0.96) saturate(1.12); } 100% { transform: scaleY(1.34) translate3d(0,0,0); filter: brightness(1.34) saturate(1.3); } }
+          @keyframes waveSweep { 0%, 100% { transform: scaleY(0.18) translate3d(0,0,0); opacity: 0.72; } 45% { transform: scaleY(1.36) translate3d(0,0,0); opacity: 1; } 62% { transform: scaleY(0.72) translate3d(0,0,0); opacity: 0.94; } }
+          @keyframes waveRainbow { 0% { transform: scaleY(0.22) translate3d(0,0,0); filter: hue-rotate(0deg) brightness(1.1); } 100% { transform: scaleY(1.28) translate3d(0,0,0); filter: hue-rotate(55deg) brightness(1.32); } }
+          @keyframes waveMirror { 0% { transform: scaleY(0.2) translate3d(0,0,0); } 50% { transform: scaleY(1.38) translate3d(0,0,0); } 100% { transform: scaleY(0.42) translate3d(0,0,0); } }
+          @keyframes waveStep { 0% { transform: scaleY(0.22) translate3d(0,0,0); opacity: 0.8; } 35% { transform: scaleY(0.7) translate3d(0,0,0); } 70% { transform: scaleY(1.25) translate3d(0,0,0); } 100% { transform: scaleY(0.45) translate3d(0,0,0); opacity: 1; } }
+          @keyframes waveFlame { 0% { transform: scaleY(0.28) translate3d(0,0,0); filter: brightness(1.04) saturate(1.2); } 100% { transform: scaleY(1.42) translate3d(0,0,0); filter: brightness(1.38) saturate(1.42); } }
+          @keyframes waveAurora { 0%, 100% { transform: scaleY(0.24) translate3d(0,0,0); filter: hue-rotate(-18deg) brightness(1.05); } 50% { transform: scaleY(1.32) translate3d(0,0,0); filter: hue-rotate(28deg) brightness(1.28); } }
+          @keyframes waveCrystal { 0% { transform: scaleY(0.2) translate3d(0,0,0); opacity: 0.78; } 100% { transform: scaleY(1.24) translate3d(0,0,0); opacity: 1; filter: brightness(1.35); } }
+          @keyframes waveBass { 0%, 100% { transform: scaleY(0.18) translate3d(0,0,0); } 18% { transform: scaleY(1.5) translate3d(0,0,0); } 38% { transform: scaleY(0.5) translate3d(0,0,0); } 65% { transform: scaleY(1.05) translate3d(0,0,0); } }
           
           .progress-row { display: flex; align-items: center; gap: 10px; padding: 4px 0 12px; }
           .time-text { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.7); width: 55px; }
@@ -1308,6 +1409,18 @@ export const TabMediaMixin = {
           .modern-volume-fill { position: absolute; height: 4px; background: var(--accent); border-radius: 2px; z-index: 1; pointer-events: none; }
           .modern-volume-track-wrap::before { content: ''; position: absolute; width: 100%; height: 4px; background: var(--line); border-radius: 2px; }
           .modern-volume-text { color: var(--muted); font-size: 11px; font-weight: 700; width: 25px; text-align: right; }
+          .media-library-card { margin: 10px 10px 12px; border: 1px solid var(--line); border-radius: 16px; background: rgba(15, 23, 42, 0.28); overflow: hidden; box-shadow: 0 10px 24px rgba(0,0,0,0.12); transition: border-color 0.2s ease, background 0.2s ease; }
+          .media-library-card.collapsed { background: rgba(15, 23, 42, 0.12); }
+          .media-library-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+          .media-library-card.collapsed .media-library-header { border-bottom-color: transparent; }
+          .media-library-title { display: inline-flex; align-items: center; gap: 8px; min-width: 0; color: var(--text); font-size: 13px; font-weight: 800; }
+          .media-library-title ha-icon { color: var(--accent); --mdc-icon-size: 18px; }
+          .media-library-hint { color: var(--muted); font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .media-library-toggle { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; border: 1px solid rgba(255,255,255,0.12); border-radius: 999px; background: var(--accent); color: #fff; padding: 6px 10px; font-size: 11px; font-weight: 800; cursor: pointer; transition: transform 0.18s ease, filter 0.18s ease; }
+          .media-library-toggle:hover { transform: translateY(-1px); filter: brightness(1.08); }
+          .media-library-toggle ha-icon { --mdc-icon-size: 16px; transition: transform 0.18s ease; }
+          .media-library-toggle.is-open ha-icon { transform: rotate(180deg); }
+          .media-library-content.collapsed { display: none; }
           .subtabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 12px 10px 6px; }
           .subtab { border: 1px solid var(--line); border-radius: 10px; padding: 8px 6px; background: var(--bg-tile); color: var(--muted); font-weight: 600; font-size: 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; transition: all 0.2s; }
           .subtab:hover { background: var(--line); color: var(--text); transform: translateY(-1px); }
@@ -1422,25 +1535,41 @@ export const TabMediaMixin = {
             .multiroom-tags { grid-column: 2 / span 2; flex-direction: row; justify-content: flex-start; align-items: center; flex-wrap: wrap; }
 
             .cover-disc { width: 60px; height: 60px; flex: 0 0 60px; border-width: 1px; }
+            .media-library-card { margin: 8px 6px 10px; }
+            .media-library-header { padding: 8px; gap: 8px; }
+            .media-library-hint { display: none; }
+            .media-library-toggle { padding: 6px 8px; }
             .subtabs { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 8px 4px 4px; }
             .subtab { padding: 6px 2px; font-size: 11px; }
             .search-row { padding: 6px 8px; gap: 8px; }
             .result-item { grid-template-columns: 44px minmax(0, 1fr) auto; padding: 6px 8px; gap: 8px; }
             .thumb, .thumb-wrap { width: 44px; height: 44px; }
             .result-title { font-size: 12px; }
-            .wave-bar { margin: 0; }
+            .waveform-full {
+              height: 68px;
+              margin-top: -10px;
+              padding: 0 4px;
+              gap: 2px;
+              grid-auto-columns: minmax(2px, 1fr);
+            }
+            .wave-bar {
+              border-radius: 999px;
+              box-shadow: 0 0 1px rgba(255,255,255,0.95), 0 0 6px rgba(167,139,250,0.78), inset 0 1px 1px rgba(255,255,255,0.78);
+            }
           }
           
           /* --- CSS CHO FOOTER --- */
           .media-footer {
-            margin-top: auto; /* Tự động đẩy xuống đáy */
-            padding: 14px 16px;
+            margin-top: auto;
+            padding: 3px 8px;
+            min-height: 0;
+            line-height: 1.15;
             text-align: center;
-            font-size: 12px;
+            font-size: 11px;
             color: rgba(255, 255, 255, 0.45);
             border-top: 1px solid rgba(255, 255, 255, 0.05);
-            background: rgba(0, 0, 0, 0.15); /* Làm nền hơi tối lại tạo chiều sâu */
-            letter-spacing: 0.2px;
+            background: rgba(0, 0, 0, 0.12);
+            letter-spacing: 0.1px;
           }
           .media-footer a {
             color: #818cf8; /* Màu xanh tím tone-sur-tone với Multiroom icon */
@@ -1471,7 +1600,7 @@ export const TabMediaMixin = {
                 <div class="hero-actions">
                    <button type="button" id="btn-repeat" class="icon-btn-transparent hover-scale" title="Chế độ lặp lại" style="color: ${this._repeatMode === "off" ? "rgba(255,255,255,0.4)" : (this._repeatMode === "one" ? "#34d399" : "#fff")}"><ha-icon icon="${repeatIcon}"></ha-icon></button>
                    <button type="button" id="btn-autonext" class="icon-btn-transparent hover-scale" title="Tự động phát tiếp" style="color: ${this._autoNextEnabled ? '#60a5fa' : 'rgba(255,255,255,0.4)'}"><ha-icon icon="mdi:shuffle"></ha-icon></button>
-                   <button type="button" id="btn-wave-toggle" class="icon-btn-transparent hover-scale" title="Đổi kiểu sóng âm"><ha-icon icon="mdi:waveform"></ha-icon></button>
+                   <button type="button" id="btn-wave-toggle" class="icon-btn-transparent hover-scale" title="Đổi kiểu sóng âm: ${this._maHoaHtml(waveName)} (${waveNumber}/10)"><ha-icon icon="mdi:waveform"></ha-icon></button>
                 </div>
               </div>
             </div>
@@ -1518,22 +1647,36 @@ export const TabMediaMixin = {
           </div>
         </div>
 
-        <div class="subtabs">
-          <button type="button" class="subtab ${this._mediaSearchTab === "songs" ? "active" : ""}" data-media-tab="songs">Songs</button>
-          <button type="button" class="subtab ${this._mediaSearchTab === "playlist" ? "active" : ""}" data-media-tab="playlist">Playlist</button>
-          <button type="button" class="subtab ${this._mediaSearchTab === "zing" ? "active" : ""}" data-media-tab="zing">Zing MP3</button>
-          <button type="button" class="subtab ${this._mediaSearchTab === "playlists" ? "active" : ""}" data-media-tab="playlists"><ha-icon icon="mdi:format-list-bulleted" style="--mdc-icon-size: 14px; margin-right: 2px;"></ha-icon>Playlists</button>
-        </div>
+        <div id="media-library-card" class="media-library-card ${mediaLibraryVisible ? 'expanded' : 'collapsed'}">
+          <div class="media-library-header">
+            <div class="media-library-title">
+              <ha-icon icon="mdi:playlist-music"></ha-icon>
+              <span>Danh sách media</span>
+              <span class="media-library-hint">${mediaLibraryVisible ? 'Bấm ra ngoài thẻ để tự ẩn' : 'Đang ẩn nội dung'}</span>
+            </div>
+            <button type="button" id="btn-media-library-toggle" class="media-library-toggle ${mediaLibraryVisible ? 'is-open' : ''}" aria-expanded="${mediaLibraryVisible ? 'true' : 'false'}">
+              <span>${mediaLibraryVisible ? 'Ẩn' : 'Hiện'}</span>
+              <ha-icon icon="mdi:chevron-down"></ha-icon>
+            </button>
+          </div>
+          <div id="media-library-content" class="media-library-content ${mediaLibraryVisible ? 'expanded' : 'collapsed'}">
+            ${multiroomHtml}
+            <div class="subtabs">
+              <button type="button" class="subtab ${this._mediaSearchTab === "songs" ? "active" : ""}" data-media-tab="songs">Songs</button>
+              <button type="button" class="subtab ${this._mediaSearchTab === "playlist" ? "active" : ""}" data-media-tab="playlist">Playlist</button>
+              <button type="button" class="subtab ${this._mediaSearchTab === "zing" ? "active" : ""}" data-media-tab="zing">Zing MP3</button>
+              <button type="button" class="subtab ${this._mediaSearchTab === "playlists" ? "active" : ""}" data-media-tab="playlists"><ha-icon icon="mdi:format-list-bulleted" style="--mdc-icon-size: 14px; margin-right: 2px;"></ha-icon>Playlists</button>
+            </div>
 
-        <div class="search-row ${this._mediaSearchTab === "playlists" ? "hidden" : ""}">
-          <input id="media-query" class="text-input" type="text" placeholder="${this._mediaSearchTab === 'playlist' ? 'Tìm playlist...' : 'Tìm bài hát...'}" value="${this._maHoaHtml(currentQuery)}" />
-          <button type="button" id="btn-search" class="icon-btn icon-btn-primary search-btn-hover"><ha-icon icon="mdi:magnify"></ha-icon></button>
-        </div>
+            <div class="search-row ${this._mediaSearchTab === "playlists" ? "hidden" : ""}">
+              <input id="media-query" class="text-input" type="text" placeholder="${this._mediaSearchTab === 'playlist' ? 'Tìm playlist...' : 'Tìm bài hát...'}" value="${this._maHoaHtml(currentQuery)}" />
+              <button type="button" id="btn-search" class="icon-btn icon-btn-primary search-btn-hover"><ha-icon icon="mdi:magnify"></ha-icon></button>
+            </div>
 
-        ${multiroomHtml}
-
-        <div class="results">
-          ${resultsHtml}
+            <div class="results">
+              ${resultsHtml}
+            </div>
+          </div>
         </div>
 
         <div class="modal-overlay ${this._modalThemVaoPlaylist.show ? 'active' : ''}" id="modal-add-to-playlist">
@@ -1617,6 +1760,37 @@ export const TabMediaMixin = {
         } catch(e) {}
     };
 
+    if (this._mediaLibraryOutsideClickHandler) {
+      document.removeEventListener("click", this._mediaLibraryOutsideClickHandler, true);
+      this._mediaLibraryOutsideClickHandler = null;
+    }
+
+    root.querySelector("#btn-media-library-toggle")?.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      removeFocus();
+      this._mediaLibraryVisible = this._mediaLibraryVisible === false;
+      this._veGiaoDien();
+    });
+
+    const mediaLibraryCard = root.querySelector("#media-library-card");
+    if (mediaLibraryCard && this._mediaLibraryVisible !== false) {
+      this._mediaLibraryOutsideClickHandler = (ev) => {
+        if (this._activeTab !== "media" || this._mediaLibraryVisible === false) return;
+        const card = (this.shadowRoot || this)?.querySelector("#media-library-card");
+        if (!card) return;
+        const path = typeof ev.composedPath === "function" ? ev.composedPath() : [];
+        if (path.includes(card)) return;
+        this._mediaLibraryVisible = false;
+        this._veGiaoDien();
+      };
+      setTimeout(() => {
+        if (this._mediaLibraryOutsideClickHandler && this._activeTab === "media" && this._mediaLibraryVisible !== false) {
+          document.addEventListener("click", this._mediaLibraryOutsideClickHandler, true);
+        }
+      }, 0);
+    }
+
     // ==========================================
     // LOGIC TỰ ĐỘNG CUỘN ĐẾN BÀI HÁT ĐANG PHÁT (Đã tắt theo yêu cầu)
     // ==========================================
@@ -1664,7 +1838,7 @@ export const TabMediaMixin = {
     root.querySelector("#btn-wave-toggle")?.addEventListener("click", (ev) => {
       ev.preventDefault(); ev.stopPropagation();
       removeFocus();
-      this._waveEffect = (this._waveEffect + 1) % 3;
+      this._waveEffect = (this._waveEffect + 1) % 10;
       this._veGiaoDien();
     });
 
